@@ -76,7 +76,7 @@ start_time = '1980-01-01'
 end_time = '2010-12-31'
 
 # Static Input Data Folder:
-raw_input_folder = "I:/SHETRAN_GB_2021/inputs/Raw ASCII inputs for SHETRAN UK/" # add to test github
+raw_input_folder = "I:/SHETRAN_GB_2021/inputs/Raw ASCII inputs for SHETRAN UK/"
 
 # --- Set Processing Methods -----------------------------------
 # PYRAMID = 'C:/Users/nbs65/Newcastle University/PYRAMID - General/WP3/02 SHETRAN Simulations/'
