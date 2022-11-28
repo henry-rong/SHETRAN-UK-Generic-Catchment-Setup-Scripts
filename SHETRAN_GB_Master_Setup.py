@@ -29,13 +29,14 @@
 # Masks MUST align with the nearest 1000m! Else your climate data will be blank.
 # Masks MUST NOT have isolated cells / diagonally connected cells. This will stop the
 # SHETRAN Prepare.exe script from setting up. Remove these manually (and check any
-# corresponding cell maps.
+# corresponding cell maps).
 #
 # --- Northern Ireland:
 # NI datasets are not fully included into the setup and so are processed differently. They
 # do not have gridded climate data, instead, this is available in processed form for a
 # selection of catchments (this was provided by Helen He at UEA). These only run until the
-# end of 2010.
+# end of 2010. The Northern Ireland runs should run from 01/01/1980 - 01/01/2011. This was
+# incorrect in the initial version and the library files were corrected manually.
 #
 #
 # TODO
@@ -52,12 +53,17 @@
 #
 # -------------------------------------------------------------
 
+# TODO:
+#   - Check that the cookie cutter problem is fixed.
+#   - Load climate data in before running through catchments. As in 1a Quickload of the UKCP setup.
 
 # --- Load in Packages ----------------------------------------
 import numpy as np
 import time
 import SHETRAN_GB_Master_Setup_Functions as SF
 import pandas as pd  # for reading CSVs
+import os
+import itertools
 
 # -------------------------------------------------------------
 # --- USER INPUTS ---------------------------------------------
@@ -66,7 +72,7 @@ import pandas as pd  # for reading CSVs
 # --- Set File Paths -------------------------------------------
 
 # Climate input folders:
-create_climate_data = False
+create_climate_data = True
 rainfall_input_folder = 'I:/CEH-GEAR downloads/'
 temperature_input_folder = 'I:/CHESS_T/'
 PET_input_folder = 'I:/CHESS/'
@@ -76,25 +82,25 @@ start_time = '1980-01-01'
 end_time = '2010-12-31'
 
 # Static Input Data Folder:
-raw_input_folder = "I:/SHETRAN_GB_2021/inputs/Raw ASCII inputs for SHETRAN UK/"
+raw_input_folder = "I:/SHETRAN_GB_2021/02_Input_Data/Raw ASCII inputs for SHETRAN UK/"
 
 # --- Set Processing Methods -----------------------------------
 # PYRAMID = 'C:/Users/nbs65/Newcastle University/PYRAMID - General/WP3/02 SHETRAN Simulations/'
 process_single_catchment = dict(
-    single=False,
-    simulation_name='203050',
-    mask_path="I:/SHETRAN_GB_2021/inputs/1kmBngMasks_Processed/203050_Mask.txt",
-    output_folder="I:/SHETRAN_GB_2021/historical_220601_GB_APM_Additions/203050/")
+    single=True,
+    simulation_name='12001',
+    mask_path="I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/12001_Mask.txt",
+    output_folder="I:/SHETRAN_GB_2021/04_Historical_Simulations/historical_220601_UK_APM_Additions/12001/")
 
 # Choose Single / Multiprocessing:
 multiprocessing = dict(
     process_multiple_catchments=not process_single_catchment["single"],
     simulation_list_csv='C:/Users/nbs65/OneDrive - Newcastle University/Python Code/SHETRAN_generic_catchment_setup/Simulation_Setup_List.csv',
-    mask_folder_prefix='I:/SHETRAN_GB_2021/inputs/1kmBngMasks_Processed/',
-    output_folder_prefix='I:/SHETRAN_GB_2021/historical_220601_GB_APM_Additions/',
+    mask_folder_prefix='I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/',
+    output_folder_prefix='I:/SHETRAN_GB_2021/04_Historical_Simulations/historical_220601_UK_APM_Additions/',
     use_multiprocessing=False,  # May only work on Blades?
-    n_processes=9,  # For use on the blades
-    use_groups=True,  # [True, False][1]
+    n_processes=3,  # For use on the blades
+    use_groups=False,  # [True, False][1]
     group="2")  # String. Not used when use_groups == False.
 
 # -------------------------------------------------------------
@@ -110,17 +116,42 @@ if __name__ == "__main__":
     # --- Import the Static Dataset -------------------------------
     static_data = SF.read_static_asc_csv(raw_input_folder)
 
+    # --- Import the Climate Datasets -----------------------------
+    if create_climate_data:
+
+        # Find Climate Files to load for Each Variable:
+        start_year = int(start_time[0:4])
+        end_year = int(end_time[0:4])
+
+        prcp_input_files = SF.find_rainfall_files(start_year, end_year)
+        tas_input_files = SF.find_temperature_or_PET_files(temperature_input_folder, start_year, end_year)
+        pet_input_files = SF.find_temperature_or_PET_files(PET_input_folder, start_year, end_year)
+
+
+        # Read in the Climate Files:
+        print("  Reading rainfall...")
+        rainfall_dataset = SF.read_climate_data(root_folder=rainfall_input_folder, filenames=prcp_input_files)
+
+        print("  Reading temperature...")
+        temperature_dataset = SF.read_climate_data(root_folder=temperature_input_folder, filenames=tas_input_files)
+
+        print("  Reading PET...")
+        pet_dataset = SF.read_climate_data(root_folder=PET_input_folder, filenames=pet_input_files)
+
+
     # --- Call Functions to Process a Single Catchment ------------
     if process_single_catchment["single"]:
         print("Processing single catchment...")
         SF.process_catchment(
-            catch=process_single_catchment["simulation_name"], mask_path=process_single_catchment["mask_path"],
+            catch=process_single_catchment["simulation_name"],
+            mask_path=process_single_catchment["mask_path"],
             simulation_startime=start_time, simulation_endtime=end_time,
             output_subfolder=process_single_catchment["output_folder"], static_inputs=static_data,
-            produce_climate=create_climate_data, prcp_input_folder=rainfall_input_folder,
-            tas_input_folder=temperature_input_folder, pet_input_folder=PET_input_folder)
+            produce_climate=create_climate_data, prcp_data=rainfall_dataset,
+            tas_data=temperature_dataset, pet_data=pet_dataset)
 
-    # --- Multiprocess Catchments ---------------------------------
+
+    # --- Call Functions if Using Multiprocessing -----------------
 
     if multiprocessing["process_multiple_catchments"]:
         print("Processing multiple catchments...")

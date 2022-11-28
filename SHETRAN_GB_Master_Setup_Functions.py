@@ -8,6 +8,10 @@
 # Catchment Simulation Creator. Function updates should always
 # be backwards compatible and as simple as possible to aid future
 # users.
+#
+# Notes:
+# CHESS rainfall reads in the Y coordinates backwards, if you
+# change the meteorological inputs then check the coordinates.
 # -------------------------------------------------------------
 
 # --- Load in Packages ----------------------------------------
@@ -312,49 +316,76 @@ def create_static_maps(static_input_dataset, xll, yll, ncols, nrows, cellsize,
 
     return vegetation_arr, soil_arr, orig_soil_types, new_soil_types
 
+def find_rainfall_files(year_from, year_to):
+    x = [str(y) + '.nc' for y in range(year_from, year_to + 1)]
+    return x
+
+
+def find_temperature_or_PET_files(folder_path, year_from, year_to):
+    files = sorted(os.listdir(folder_path))
+    x = []
+    for fn in files:
+        if fn[-3:] == ".nc":
+            if int(fn.split('_')[-1][:4]) in range(year_from, year_to + 1):
+                x.append(fn)
+    return x
+
+
+def read_climate_data(root_folder, filenames):
+
+    first_loop = True
+
+    # Run through the different decades, bolting the required catchment data into a common dataframe.
+    for file in filenames:
+
+        print("    - ", file)
+
+        with xr.open_dataset(os.path.join(root_folder, file)) as DS:
+
+            if first_loop:
+                DS_all_periods = DS
+                first_loop = False
+            else:
+                DS_all_periods = xr.merge([DS_all_periods, DS])
+
+    return DS_all_periods
+
 
 def make_series(
-        input_files, input_folder, xll, yll, urx, ury, variable, series_startime, series_endtime,
+        met_dataset,
+        xll, yll, urx, ury,
+        variable, series_startime, series_endtime,
         cat_coords, cell_ids, series_output_path, write_cell_id_map=False,
         map_output_path=None, map_hdrs=None):
-    """Make and save climate time series for an individual variable."""
+    """
+    Make and save climate time series for an individual variable.
+    """
 
-    print("-------- reading", variable, "...")
+    print("-------- Cropping ", variable, " to catchment.")
+    if variable == 'rainfall_amount':
+        ds_sel = met_dataset.sel(y=slice(ury, yll), x=slice(xll, urx))  # Y coords reversed as CHESS lists them backwards
+    else:
+        ds_sel = met_dataset.sel(y=slice(yll, ury), x=slice(xll, urx))
 
-    # Read time series for full grid of cells into df
-    dfs = []
-    for input_file in input_files:
-        print("---------------", input_file)
-        input_path = os.path.join(input_folder, input_file)
+    # sometimes pet is called peti, check that here just in case.
+    if variable == 'pet':
+        ds_sel_var = list(ds_sel.keys())
+        variable = [ds_sel_var[i] for i in np.arange(0, len(ds_sel_var)) if 'pet' in ds_sel_var[i]][0]
 
-        ds = xr.open_dataset(input_path)  # pickle.load(input_path) #
-        if variable == 'rainfall_amount':
-            ds_sel = ds.sel(y=slice(ury, yll), x=slice(xll, urx))
-        else:
-            ds_sel = ds.drop_vars(['lat', 'lon'])  # TODO check whether this works with drop_vars or drop_sel instead of drop
-            ds_sel = ds_sel.sel(y=slice(yll, ury), x=slice(xll, urx))
+    df = ds_sel[variable].to_dataframe()
+    df = df.unstack(level=['y', 'x'])
 
-        # sometimes pet is called peti, check that here just in case.
-        if variable == 'pet':
-            ds_sel_var = list(ds_sel.keys())
-            variable = [ds_sel_var[i] for i in np.arange(0, len(ds_sel_var)) if 'pet' in ds_sel_var[i]][0]
+    y_coords = list(df.columns.levels[1])
+    y_coords.sort(reverse=True)  # TODO: Check that this does actually want reversing.
+    x_coords = list(df.columns.levels[2])
+    x_coords.sort(reverse=False)
 
-        df = ds_sel[variable].to_dataframe()
-        df = df.unstack(level=['y', 'x'])
-
-        y_coords = list(df.columns.levels[1])
-        y_coords.sort(reverse=True)
-        x_coords = list(df.columns.levels[2])
-        x_coords.sort(reverse=False)
-
-        df_ord = df.loc[:, list(itertools.product([variable], y_coords, x_coords))]
-        dfs.append(df_ord)
-
-        ds.close()
+    dfs = df.loc[:, list(itertools.product([variable], y_coords, x_coords))]
 
     # Subset on time period and cells in catchment
-    print("---------------- time sub-setting ", variable, "...")
-    df = pd.concat(dfs).sort_index().loc[series_startime:series_endtime]
+    # TODO Check that this doesn't delete data when cut out.
+    print("---------------- Cropping ", variable, " data to period.")
+    df = dfs.sort_index().loc[series_startime:series_endtime]
     tmp = np.asarray(df.columns[:])
     all_coords = [(y, x) for _, y, x in tmp]
     cat_indices = []
@@ -380,12 +411,9 @@ def make_series(
 
 
 def create_climate_files(climate_startime, climate_endtime, mask_path, catch, climate_output_folder,
-                         prcp_input_folder, tas_input_folder, pet_input_folder):
+                         prcp_data, tas_data, pet_data):
     """
     Create climate time series.
-    TODO: Change the method by which the files are sorted. These are currently done by name, which creates an issue
-     when the later files are alphabetized before the older files (e.g. with PET, where the name changes). It would
-     be better to use the timestamp from within these files instead.
     """
 
     start_year, _, _ = get_date_components(climate_startime)
@@ -396,8 +424,7 @@ def create_climate_files(climate_startime, climate_endtime, mask_path, catch, cl
         mask_path, data_type=int, return_metadata=True
     )
 
-    # ---
-    # Precipitation
+    # --- Precipitation
 
     # Figure out coordinates of upper right
     urx = xll + (ncols - 1) * cellsize
@@ -406,22 +433,20 @@ def create_climate_files(climate_startime, climate_endtime, mask_path, catch, cl
     # Get coordinates and IDs of cells inside catchment
     cat_coords, cell_ids = get_catchment_coords_ids(xll, yll, urx, ury, cellsize, mask)
 
-    # Precipitation input folders and file lists
-    prcp_input_files = [str(y) + '.nc' for y in range(start_year, end_year + 1)]
-
     # Make precipitation time series and cell ID map
-    # print("------------------------------ rainfall")
     series_output_path = climate_output_folder + catch + '_Precip.csv'
     map_output_path = climate_output_folder + catch + '_Cells.asc'
     if not os.path.exists(series_output_path):
         make_series(
-            prcp_input_files, prcp_input_folder, xll, yll, urx, ury, 'rainfall_amount',
-            climate_startime, climate_endtime, cat_coords, cell_ids, series_output_path,
+            met_dataset=prcp_data,
+            xll=xll, yll=yll, urx=urx, ury=ury,
+            variable='rainfall_amount',
+            series_startime=climate_startime, series_endtime=climate_endtime,
+            cat_coords=cat_coords, cell_ids=cell_ids, series_output_path=series_output_path,
             write_cell_id_map=True, map_output_path=map_output_path, map_hdrs=hdrs
         )
 
-    # ---
-    # Temperature
+    # --- Temperature
 
     # Cell centre ll coords
     xll_centroid = xll + 500.0
@@ -436,47 +461,37 @@ def create_climate_files(climate_startime, climate_endtime, mask_path, catch, cl
     for yv, xv in cat_coords:
         cat_coords_centroid.append((yv + 500.0, xv + 500.0))
 
-    # Temperature input folders and file lists
-    tmp = sorted(os.listdir(tas_input_folder))
-    tas_input_files = []
-    for fn in tmp:
-        if fn[-3:] == ".nc":
-            if int(fn.split('_')[-1][:4]) in range(start_year, end_year + 1):
-                tas_input_files.append(fn)
-
     # Make temperature time series
-    # print("------------------------------ temperature")
     series_output_path = climate_output_folder + catch + '_Temp.csv'
     if not os.path.exists(series_output_path):
+
         make_series(
-            tas_input_files, tas_input_folder, xll_centroid, yll_centroid, urx_centroid, ury_centroid, 'tas',
-            climate_startime, climate_endtime, cat_coords_centroid, cell_ids, series_output_path
+            met_dataset=tas_data,
+            xll=xll_centroid, yll=yll_centroid, urx=urx_centroid, ury=ury_centroid,
+            variable='tas',
+            series_startime=climate_startime, series_endtime=climate_endtime,
+            cat_coords=cat_coords_centroid, cell_ids=cell_ids, series_output_path=series_output_path
         )
 
-    # ---
-    # PET
 
-    # PET input folders and file lists:
-    tmp = sorted(os.listdir(pet_input_folder))
-    pet_input_files = []
-    for fn in tmp:
-        if fn[-3:] == ".nc":
-            if int(fn.split('_')[-1][:4]) in range(start_year, end_year + 1):
-                pet_input_files.append(fn)
+    # --- PET
 
     # Make PET time series
-    # print("------------------------------ PET")
     series_output_path = climate_output_folder + catch + '_PET.csv'
     if not os.path.exists(series_output_path):
+
         make_series(
-            pet_input_files, pet_input_folder, xll_centroid, yll_centroid, urx_centroid, ury_centroid, 'pet',
-            climate_startime, climate_endtime, cat_coords_centroid, cell_ids, series_output_path
+            met_dataset=pet_data,
+            xll=xll_centroid, yll=yll_centroid, urx=urx_centroid, ury=ury_centroid,
+            variable='pet',
+            series_startime=climate_startime, series_endtime=climate_endtime,
+            cat_coords=cat_coords_centroid, cell_ids=cell_ids, series_output_path=series_output_path
         )
 
 
 def process_catchment(
         catch, mask_path, simulation_startime, simulation_endtime, output_subfolder, static_inputs,
-        produce_climate=True, prcp_input_folder=None, tas_input_folder=None, pet_input_folder=None  # ,q=None
+        produce_climate=True, prcp_data=None, tas_data=None, pet_data=None  # ,q=None
 ):
     """
     Create all files needed to run shetran-prepare.
@@ -501,7 +516,7 @@ def process_catchment(
         if produce_climate:
             print(catch, ": producing climate files...")
             create_climate_files(simulation_startime, simulation_endtime, mask_path, catch, output_subfolder,
-                                 prcp_input_folder, tas_input_folder, pet_input_folder)
+                                 prcp_data, tas_data, pet_data)
 
         # Get strings of vegetation and soil properties/details for library file
         # print(catch, ": creating vegetation (land use) and soil strings...")
@@ -521,8 +536,8 @@ def process_catchment(
 
 
 def process_mp(mp_catchments, mp_mask_folders, mp_output_folders, mp_simulation_startime,
-               mp_simulation_endtime, mp_static_inputs, mp_prcp_input_folder, mp_tas_input_folder,
-               mp_pet_input_folder, mp_produce_climate=False, num_processes=10):
+               mp_simulation_endtime, mp_static_inputs, mp_prcp_data, mp_tas_data,
+               mp_pet_data, mp_produce_climate=False, num_processes=10):
 
     manager = mp.Manager()
     # q = manager.Queue()
@@ -533,7 +548,7 @@ def process_mp(mp_catchments, mp_mask_folders, mp_output_folders, mp_simulation_
         job = pool.apply_async(process_catchment,
                                (mp_catchments[catch], mp_mask_folders[catch], mp_simulation_startime,
                                 mp_simulation_endtime, mp_output_folders[catch], mp_static_inputs, mp_produce_climate,
-                                mp_prcp_input_folder, mp_tas_input_folder, mp_pet_input_folder))
+                                mp_prcp_data, mp_tas_data, mp_pet_data))
 
         jobs.append(job)
 
