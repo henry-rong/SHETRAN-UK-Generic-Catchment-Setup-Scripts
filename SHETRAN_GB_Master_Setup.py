@@ -87,7 +87,7 @@ raw_input_folder = "I:/SHETRAN_GB_2021/02_Input_Data/Raw ASCII inputs for SHETRA
 # --- Set Processing Methods -----------------------------------
 # PYRAMID = 'C:/Users/nbs65/Newcastle University/PYRAMID - General/WP3/02 SHETRAN Simulations/'
 process_single_catchment = dict(
-    single=True,
+    single=False,
     simulation_name='12001',
     mask_path="I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/12001_Mask.txt",
     output_folder="I:/SHETRAN_GB_2021/04_Historical_Simulations/historical_220601_UK_APM_Additions/12001/")
@@ -97,7 +97,7 @@ multiprocessing = dict(
     process_multiple_catchments=not process_single_catchment["single"],
     simulation_list_csv='C:/Users/nbs65/OneDrive - Newcastle University/Python Code/SHETRAN_generic_catchment_setup/Simulation_Setup_List.csv',
     mask_folder_prefix='I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/',
-    output_folder_prefix='I:/SHETRAN_GB_2021/04_Historical_Simulations/historical_220601_UK_APM_Additions/',
+    output_folder_prefix='I:/SHETRAN_GB_2021/04_Historical_Simulations/historical_220601_UK_APM_Additions/QuickloadTest/',
     use_multiprocessing=False,  # May only work on Blades?
     n_processes=3,  # For use on the blades
     use_groups=False,  # [True, False][1]
@@ -123,20 +123,20 @@ if __name__ == "__main__":
         start_year = int(start_time[0:4])
         end_year = int(end_time[0:4])
 
-        prcp_input_files = SF.find_rainfall_files(start_year, end_year)
-        tas_input_files = SF.find_temperature_or_PET_files(temperature_input_folder, start_year, end_year)
-        pet_input_files = SF.find_temperature_or_PET_files(PET_input_folder, start_year, end_year)
-
-
-        # Read in the Climate Files:
         print("  Reading rainfall...")
+        prcp_input_files = SF.find_rainfall_files(start_year, end_year)
         rainfall_dataset = SF.read_climate_data(root_folder=rainfall_input_folder, filenames=prcp_input_files)
 
         print("  Reading temperature...")
+        tas_input_files = SF.find_temperature_or_PET_files(temperature_input_folder, start_year, end_year)
         temperature_dataset = SF.read_climate_data(root_folder=temperature_input_folder, filenames=tas_input_files)
 
         print("  Reading PET...")
+        pet_input_files = SF.find_temperature_or_PET_files(PET_input_folder, start_year, end_year)
         pet_dataset = SF.read_climate_data(root_folder=PET_input_folder, filenames=pet_input_files)
+
+    else:
+        rainfall_dataset = temperature_dataset = pet_dataset = None
 
 
     # --- Call Functions to Process a Single Catchment ------------
@@ -151,7 +151,7 @@ if __name__ == "__main__":
             tas_data=temperature_dataset, pet_data=pet_dataset)
 
 
-    # --- Call Functions if Using Multiprocessing -----------------
+    # --- Call Functions if Setting Up Multiple Catchments --------
 
     if multiprocessing["process_multiple_catchments"]:
         print("Processing multiple catchments...")
@@ -163,13 +163,16 @@ if __name__ == "__main__":
         if multiprocessing["use_groups"]:
             catchments_csv = catchments_csv[catchments_csv["Group"] == multiprocessing["group"]]
 
+        # Get a list of the simulation/catchment names:
         simulation_names = list([str(c) for c in catchments_csv["Simulation_Name"]])
 
+        # Create a list of file paths to the catchment masks:
         simulation_masks = [multiprocessing["mask_folder_prefix"] +
                             str(catchments_csv["Additional_Mask_Path"][x]) +
                             str(catchments_csv["Simulation_Name"][x]) + "_Mask.txt"
                             for x in catchments_csv["Simulation_Name"].index]
 
+        # Create a list of output paths for the processed catchments:
         output_folders = [multiprocessing["output_folder_prefix"] +
                           str(catchments_csv["Additional_Output_Path"][x]) +
                           str(catchments_csv["Simulation_Name"][x]) + "/"
@@ -178,17 +181,18 @@ if __name__ == "__main__":
         if multiprocessing["use_multiprocessing"]:
             print("Using multi-processing...")
 
+            # Run the multiprocessing catchment setup:
             SF.process_mp(mp_catchments=simulation_names, mp_mask_folders=simulation_masks,
                           mp_output_folders=output_folders, mp_simulation_startime=start_time,
                           mp_simulation_endtime=end_time, mp_static_inputs=static_data,
-                          mp_produce_climate=create_climate_data, mp_prcp_input_folder=rainfall_input_folder,
-                          mp_tas_input_folder=temperature_input_folder, mp_pet_input_folder=PET_input_folder,
+                          mp_produce_climate=create_climate_data, mp_prcp_data=rainfall_dataset,
+                          mp_tas_data=temperature_dataset, mp_pet_data=pet_dataset,
                           num_processes=multiprocessing["n_processes"])
 
         else:
             print("Using single processor...")
             for c in np.arange(0, len(simulation_names)):
-                # print(simulation_masks[c])
+                # Run the single processor catchment setup (for multiple catchments):
                 SF.process_catchment(catch=simulation_names[c],
                                      mask_path=simulation_masks[c],
                                      simulation_startime=start_time,
@@ -196,8 +200,8 @@ if __name__ == "__main__":
                                      output_subfolder=output_folders[c],
                                      static_inputs=static_data,
                                      produce_climate=create_climate_data,
-                                     prcp_input_folder=rainfall_input_folder,
-                                     tas_input_folder=temperature_input_folder,
-                                     pet_input_folder=PET_input_folder)
+                                     prcp_data=rainfall_dataset,
+                                     tas_data=temperature_dataset,
+                                     pet_data=pet_dataset)
                 time.sleep(1)
     print("Finished Processing Catchments")

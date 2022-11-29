@@ -361,7 +361,7 @@ def make_series(
     Make and save climate time series for an individual variable.
     """
 
-    print("-------- Cropping ", variable, " to catchment.")
+    # print("-------- Cropping", variable, "to catchment.")
     if variable == 'rainfall_amount':
         ds_sel = met_dataset.sel(y=slice(ury, yll), x=slice(xll, urx))  # Y coords reversed as CHESS lists them backwards
     else:
@@ -384,7 +384,7 @@ def make_series(
 
     # Subset on time period and cells in catchment
     # TODO Check that this doesn't delete data when cut out.
-    print("---------------- Cropping ", variable, " data to period.")
+    # print("-------- Cropping", variable, "data to period.")
     df = dfs.sort_index().loc[series_startime:series_endtime]
     tmp = np.asarray(df.columns[:])
     all_coords = [(y, x) for _, y, x in tmp]
@@ -401,7 +401,7 @@ def make_series(
         df -= 273.15
 
     # Write outputs
-    print("-------- writing ", variable, "...")
+    # print("-------- writing ", variable, "...")
     headers = np.unique(cell_ids)
     headers = headers[headers >= 1]
 
@@ -434,8 +434,10 @@ def create_climate_files(climate_startime, climate_endtime, mask_path, catch, cl
     cat_coords, cell_ids = get_catchment_coords_ids(xll, yll, urx, ury, cellsize, mask)
 
     # Make precipitation time series and cell ID map
+    print("-------- Processing rainfall data.")
     series_output_path = climate_output_folder + catch + '_Precip.csv'
     map_output_path = climate_output_folder + catch + '_Cells.asc'
+
     if not os.path.exists(series_output_path):
         make_series(
             met_dataset=prcp_data,
@@ -462,9 +464,9 @@ def create_climate_files(climate_startime, climate_endtime, mask_path, catch, cl
         cat_coords_centroid.append((yv + 500.0, xv + 500.0))
 
     # Make temperature time series
+    print("-------- Processing temperature data.")
     series_output_path = climate_output_folder + catch + '_Temp.csv'
     if not os.path.exists(series_output_path):
-
         make_series(
             met_dataset=tas_data,
             xll=xll_centroid, yll=yll_centroid, urx=urx_centroid, ury=ury_centroid,
@@ -475,6 +477,7 @@ def create_climate_files(climate_startime, climate_endtime, mask_path, catch, cl
 
 
     # --- PET
+    print("-------- Processing evapotranspiration data.")
 
     # Make PET time series
     series_output_path = climate_output_folder + catch + '_PET.csv'
@@ -514,7 +517,7 @@ def process_catchment(
 
         # Create climate time series files (and cell ID map)
         if produce_climate:
-            print(catch, ": producing climate files...")
+            print(catch, ": Creating climate files...")
             create_climate_files(simulation_startime, simulation_endtime, mask_path, catch, output_subfolder,
                                  prcp_data, tas_data, pet_data)
 
