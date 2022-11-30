@@ -90,12 +90,13 @@ def get_veg_string(vegetation_array_for_library, static_input_dataset):
     """
 
     veg_vals = [int(v) for v in np.unique(vegetation_array_for_library[vegetation_array_for_library != -9999])]
-    strickler_dict = {1: 0.6, 2: 3, 3: 0.5, 4: 1, 5: 0.25, 6: 2, 7: 5}
+    # strickler_dict = {1: 0.6, 2: 3, 3: 0.5, 4: 1, 5: 0.25, 6: 2, 7: 5}
+    # strickler_dict
 
     # Extract the vegetation properties from the metadata
     veg_props = static_input_dataset.land_cover_lccs.attrs["land_cover_key"].loc[
         static_input_dataset.land_cover_lccs.attrs["land_cover_key"]["Veg Type #"].isin(veg_vals)].copy()
-    veg_props["strickler"] = [strickler_dict[item] for item in veg_props["Veg Type #"]]
+    # veg_props["strickler"] = [strickler_dict[item] for item in veg_props["Veg Type #"]]
 
     # Write the subset of properties out to a string
     veg_string = veg_props.to_csv(header=False, index=False)
@@ -244,9 +245,8 @@ def create_library_file(
     ]
     output_string = '\n'.join(output_list)
 
-    f = open(sim_output_folder + catch + "_LibraryFile.xml", "w")
-    f.write(output_string)
-    f.close()
+    with open(sim_output_folder + catch + "_LibraryFile.xml", "w") as f:
+        f.write(output_string)
 
 
 def create_static_maps(static_input_dataset, xll, yll, ncols, nrows, cellsize,
@@ -271,7 +271,13 @@ def create_static_maps(static_input_dataset, xll, yll, ncols, nrows, cellsize,
 
     catch_data = static_input_dataset.sel(y=slice(yur, yll), x=slice(xll, xur))
 
-    # Save each variable to ascii raster
+    # If we have additional data loaded in that we want to cut out, add these to the fields above:
+    static_field_details_names = [v[0] for v in static_field_details.values()]
+    static_input_data_names = list(catch_data.keys())
+    names_to_add = [n for n in static_input_data_names if n not in static_field_details_names]
+    for name in names_to_add:
+        static_field_details[name] = [name, '%d']
+
     # Save each variable to ascii raster
     for array_name, array_details in static_field_details.items():
         array = copy.deepcopy(catch_data[array_details[0]].values)
@@ -316,6 +322,7 @@ def create_static_maps(static_input_dataset, xll, yll, ncols, nrows, cellsize,
 
     return vegetation_arr, soil_arr, orig_soil_types, new_soil_types
 
+
 def find_rainfall_files(year_from, year_to):
     x = [str(y) + '.nc' for y in range(year_from, year_to + 1)]
     return x
@@ -332,7 +339,6 @@ def find_temperature_or_PET_files(folder_path, year_from, year_to):
 
 
 def read_climate_data(root_folder, filenames):
-
     first_loop = True
 
     # Run through the different decades, bolting the required catchment data into a common dataframe.
@@ -363,7 +369,8 @@ def make_series(
 
     # print("-------- Cropping", variable, "to catchment.")
     if variable == 'rainfall_amount':
-        ds_sel = met_dataset.sel(y=slice(ury, yll), x=slice(xll, urx))  # Y coords reversed as CHESS lists them backwards
+        ds_sel = met_dataset.sel(y=slice(ury, yll),
+                                 x=slice(xll, urx))  # Y coords reversed as CHESS lists them backwards
     else:
         ds_sel = met_dataset.sel(y=slice(yll, ury), x=slice(xll, urx))
 
@@ -475,14 +482,12 @@ def create_climate_files(climate_startime, climate_endtime, mask_path, catch, cl
             cat_coords=cat_coords_centroid, cell_ids=cell_ids, series_output_path=series_output_path
         )
 
-
     # --- PET
     print("-------- Processing evapotranspiration data.")
 
     # Make PET time series
     series_output_path = climate_output_folder + catch + '_PET.csv'
     if not os.path.exists(series_output_path):
-
         make_series(
             met_dataset=pet_data,
             xll=xll_centroid, yll=yll_centroid, urx=urx_centroid, ury=ury_centroid,
@@ -534,14 +539,13 @@ def process_catchment(
         # sys.exit()
 
     except Exception as E:
-        print(E.args)
+        print(E)
         pass
 
 
 def process_mp(mp_catchments, mp_mask_folders, mp_output_folders, mp_simulation_startime,
                mp_simulation_endtime, mp_static_inputs, mp_prcp_data, mp_tas_data,
                mp_pet_data, mp_produce_climate=False, num_processes=10):
-
     manager = mp.Manager()
     # q = manager.Queue()
     pool = mp.Pool(num_processes)
@@ -563,7 +567,7 @@ def process_mp(mp_catchments, mp_mask_folders, mp_output_folders, mp_simulation_
     pool.join()
 
 
-def read_static_asc_csv(static_input_folder):
+def read_static_asc_csv(static_input_folder, UDM_2017=False, UDM_2050=False, UDM_2080=False, NFM_max=False):
     """
     This functions will load in the raw data for the UK, i.e. asc and csv files, and convert these to the dictionary
     object used in the setups. There should be 7 files with the following names, all in the same folder (argument):
@@ -574,7 +578,19 @@ def read_static_asc_csv(static_input_folder):
         - Vegetation_Details.csc
         - SHETRAN_UK_SoilGrid_APM.asc
         - SHETRAN_UK_SoilDetails.csc
+        - UDM_GB_LandCover_2017.asc
+    All .asc files should have the same extents and cell sizes.
+
+    :param static_input_folder:
+    :param UDM_2017: True or False depending on whether you want to use the default CEH 2007 or the UDM baseline map.
+    :param UDM_2050: True or False depending on whether you want to use the default CEH 2007 or the UDM 2050 map.
+    :param UDM_2080: True or False depending on whether you want to use the default CEH 2007 or the UDM 2080 map.
+    :return:
     """
+
+    # Raise an error if there are multiple land covers selected:
+    if (UDM_2017 + UDM_2050 + UDM_2080) > 1:
+        raise ValueError("Multiple UDM land cover maps are 'True'; only a single map can be used.")
 
     # Load in the coordinate data (assumes all data has same coordinates:
     _, ncols, nrows, xll, yll, cellsize, _, _ = read_ascii_raster(static_input_folder + "SHETRAN_UK_DEM.asc",
@@ -585,6 +601,17 @@ def read_static_asc_csv(static_input_folder):
     northings = np.arange(yll, nrows * cellsize + yll, cellsize)[::-1]
     eastings_array, northings_array = np.meshgrid(eastings, northings)
 
+    # Set the desired land cover:
+    if UDM_2017:
+        LandCoverMap = "UDM_GB_LandCover_2017.asc"
+    elif UDM_2050:
+        LandCoverMap = "UDM_GB_LandCover_2050.asc"
+    elif UDM_2080:
+        LandCoverMap = "UDM_GB_LandCover_2080.asc"
+    else:
+        LandCoverMap = "SHETRAN_UK_LandCover.asc"
+
+    # Create xarray database to load/store the static input data:
     ds = xr.Dataset({
         "surface_altitude": (["y", "x"],
                              np.loadtxt(static_input_folder + "SHETRAN_UK_DEM.asc", skiprows=6),
@@ -595,7 +622,7 @@ def read_static_asc_csv(static_input_folder):
         "lake_presence": (["y", "x"],
                           np.loadtxt(static_input_folder + "SHETRAN_UK_lake_presence.asc", skiprows=6)),
         "land_cover_lccs": (["y", "x"],
-                            np.loadtxt(static_input_folder + "SHETRAN_UK_LandCover.asc", skiprows=6),
+                            np.loadtxt(static_input_folder + LandCoverMap, skiprows=6),
                             {"land_cover_key": pd.read_csv(static_input_folder + "Vegetation_Details.csv")}),
         "soil_type_APM": (["y", "x"],
                           np.loadtxt(static_input_folder + "SHETRAN_UK_SoilGrid_APM.asc", skiprows=6),
@@ -605,5 +632,9 @@ def read_static_asc_csv(static_input_folder):
                 "x": (["x"], eastings, {"projection": "BNG"}),
                 "y": (["y"], northings, {"projection": "BNG"})})
 
-    return ds
+    # Load in the GB NFM Max map from Sayers and Partners:
+    if NFM_max:
+        ds["NFM_max_storage"] = (["y", "x"], np.loadtxt(static_input_folder + "NFMmax_GB_Storage.asc", skiprows=6))
+        ds["NFM_max_woodland"] = (["y", "x"], np.loadtxt(static_input_folder + "NFMmax_GB_Woodland.asc", skiprows=6))
 
+    return ds

@@ -56,6 +56,7 @@
 # TODO:
 #   - Check that the cookie cutter problem is fixed.
 #   - Load climate data in before running through catchments. As in 1a Quickload of the UKCP setup.
+#   - Change the input DEM to have decimal places.
 
 # --- Load in Packages ----------------------------------------
 import numpy as np
@@ -72,36 +73,49 @@ import itertools
 # --- Set File Paths -------------------------------------------
 
 # Climate input folders:
-create_climate_data = True
+create_climate_data = False
 rainfall_input_folder = 'I:/CEH-GEAR downloads/'
 temperature_input_folder = 'I:/CHESS_T/'
 PET_input_folder = 'I:/CHESS/'
 
-# Model period: 'yyyy-mm-dd'
+# Static Input Data Folder:
+raw_input_folder = "I:/SHETRAN_GB_2021/02_Input_Data/Raw ASCII inputs for SHETRAN UK/"
+
+# Set Model period: 'yyyy-mm-dd'
 start_time = '1980-01-01'
 end_time = '2010-12-31'
 
-# Static Input Data Folder:
-raw_input_folder = "I:/SHETRAN_GB_2021/02_Input_Data/Raw ASCII inputs for SHETRAN UK/"
 
 # --- Set Processing Methods -----------------------------------
 # PYRAMID = 'C:/Users/nbs65/Newcastle University/PYRAMID - General/WP3/02 SHETRAN Simulations/'
 process_single_catchment = dict(
     single=False,
-    simulation_name='12001',
-    mask_path="I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/12001_Mask.txt",
-    output_folder="I:/SHETRAN_GB_2021/04_Historical_Simulations/historical_220601_UK_APM_Additions/12001/")
+    simulation_name='4005',
+    mask_path="I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/4005_Mask.txt",
+    output_folder="I:/SHETRAN_GB_2021/04_Historical_Simulations/historical_220601_UK_APM_Additions/4008_UDM/")
 
 # Choose Single / Multiprocessing:
 multiprocessing = dict(
     process_multiple_catchments=not process_single_catchment["single"],
     simulation_list_csv='C:/Users/nbs65/OneDrive - Newcastle University/Python Code/SHETRAN_generic_catchment_setup/Simulation_Setup_List.csv',
     mask_folder_prefix='I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/',
-    output_folder_prefix='I:/SHETRAN_GB_2021/04_Historical_Simulations/historical_220601_UK_APM_Additions/QuickloadTest/',
+    output_folder_prefix='I:/SHETRAN_GB_2021/04_Historical_Simulations/historical_220601_UK_APM_Additions/UDM_landcovers/',
     use_multiprocessing=False,  # May only work on Blades?
     n_processes=3,  # For use on the blades
     use_groups=False,  # [True, False][1]
-    group="2")  # String. Not used when use_groups == False.
+    group="0")  # String. Not used when use_groups == False.
+
+
+# --- Set Land Cover Types -------------------------------------
+
+# Urban development: if you wish to use land cover from the Newcastle University Urban Development Model
+Use_UrbanDevelopmentModel_2017 = True  # True /False (Default)
+Use_UrbanDevelopmentModel_2050 = False
+Use_UrbanDevelopmentModel_2080 = False
+
+# Natural Flood Risk Management: if you wish to use additional forest and storage from Sayers and Partners
+Use_NFM_Woodland_Storage_Addition = True  # True /False (Default)
+
 
 # -------------------------------------------------------------
 # --- CALL FUNCTIONS FOR SETUP --------------------------------
@@ -114,7 +128,11 @@ if __name__ == "__main__":
         pass
 
     # --- Import the Static Dataset -------------------------------
-    static_data = SF.read_static_asc_csv(raw_input_folder)
+    static_data = SF.read_static_asc_csv(static_input_folder=raw_input_folder,
+                                         UDM_2017=Use_UrbanDevelopmentModel_2017,
+                                         UDM_2050=Use_UrbanDevelopmentModel_2050,
+                                         UDM_2080=Use_UrbanDevelopmentModel_2080,
+                                         NFM_max=Use_NFM_Woodland_Storage_Addition)
 
     # --- Import the Climate Datasets -----------------------------
     if create_climate_data:
@@ -138,7 +156,6 @@ if __name__ == "__main__":
     else:
         rainfall_dataset = temperature_dataset = pet_dataset = None
 
-
     # --- Call Functions to Process a Single Catchment ------------
     if process_single_catchment["single"]:
         print("Processing single catchment...")
@@ -150,7 +167,6 @@ if __name__ == "__main__":
             produce_climate=create_climate_data, prcp_data=rainfall_dataset,
             tas_data=temperature_dataset, pet_data=pet_dataset)
 
-
     # --- Call Functions if Setting Up Multiple Catchments --------
 
     if multiprocessing["process_multiple_catchments"]:
@@ -161,6 +177,7 @@ if __name__ == "__main__":
 
         # Check whether the simulation is in the group we're processing:
         if multiprocessing["use_groups"]:
+            catchments_csv["Group"] = catchments_csv["Group"].astype('str')
             catchments_csv = catchments_csv[catchments_csv["Group"] == multiprocessing["group"]]
 
         # Get a list of the simulation/catchment names:
