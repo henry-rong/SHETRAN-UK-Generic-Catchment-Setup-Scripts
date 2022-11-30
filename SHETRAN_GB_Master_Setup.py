@@ -48,7 +48,7 @@
 # - Test climate data == TRUE.
 # - Add a mask checker to ensure that the cells start on the 1000m
 # - Consider that creating climate simulations with this will create
-#   incorrect model durations, as SHETRAN runs on calendar years, but 
+#   incorrect model durations, as SHETRAN runs on calendar years, but
 #   Climate years are only 360 days.
 #
 # -------------------------------------------------------------
@@ -59,12 +59,12 @@
 #   - Change the input DEM to have decimal places.
 
 # --- Load in Packages ----------------------------------------
-import numpy as np
-import time
 import SHETRAN_GB_Master_Setup_Functions as SF
 import pandas as pd  # for reading CSVs
-import os
-import itertools
+import numpy as np
+import time
+# import os
+# import itertools
 
 # -------------------------------------------------------------
 # --- USER INPUTS ---------------------------------------------

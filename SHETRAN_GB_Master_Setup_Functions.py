@@ -567,7 +567,9 @@ def process_mp(mp_catchments, mp_mask_folders, mp_output_folders, mp_simulation_
     pool.join()
 
 
-def read_static_asc_csv(static_input_folder, UDM_2017=False, UDM_2050=False, UDM_2080=False, NFM_max=False):
+def read_static_asc_csv(static_input_folder,
+                        UDM_2017=False, UDM_2050=False, UDM_2080=False,
+                        NFM_max=False, NFM_balanced=False):
     """
     This functions will load in the raw data for the UK, i.e. asc and csv files, and convert these to the dictionary
     object used in the setups. There should be 7 files with the following names, all in the same folder (argument):
@@ -578,13 +580,24 @@ def read_static_asc_csv(static_input_folder, UDM_2017=False, UDM_2050=False, UDM
         - Vegetation_Details.csc
         - SHETRAN_UK_SoilGrid_APM.asc
         - SHETRAN_UK_SoilDetails.csc
+
         - UDM_GB_LandCover_2017.asc
+        - UDM_GB_LandCover_2050.asc
+        - UDM_GB_LandCover_2080.asc
+
+        - NFMmax_GB_Woodland.asc
+        - NFMmax_GB_Storage.asc
+        - NFMbalanced_GB_Woodland.asc
+        - NFMmax_GB_Storage.asc
+
     All .asc files should have the same extents and cell sizes.
 
     :param static_input_folder:
     :param UDM_2017: True or False depending on whether you want to use the default CEH 2007 or the UDM baseline map.
     :param UDM_2050: True or False depending on whether you want to use the default CEH 2007 or the UDM 2050 map.
     :param UDM_2080: True or False depending on whether you want to use the default CEH 2007 or the UDM 2080 map.
+    :param NFM_balanced:
+    :param NFM_max:
     :return:
     """
 
@@ -634,7 +647,14 @@ def read_static_asc_csv(static_input_folder, UDM_2017=False, UDM_2050=False, UDM
 
     # Load in the GB NFM Max map from Sayers and Partners:
     if NFM_max:
-        ds["NFM_max_storage"] = (["y", "x"], np.loadtxt(static_input_folder + "NFMmax_GB_Storage.asc", skiprows=6))
-        ds["NFM_max_woodland"] = (["y", "x"], np.loadtxt(static_input_folder + "NFMmax_GB_Woodland.asc", skiprows=6))
+        ds["NFM_max_storage"] = (["y", "x"],
+                                 np.loadtxt(static_input_folder + "NFMmax_GB_Storage.asc", skiprows=6))
+        ds["NFM_max_woodland"] = (["y", "x"],
+                                  np.loadtxt(static_input_folder + "NFMmax_GB_Woodland.asc", skiprows=6))
+    if NFM_balanced:
+        ds["NFM_balanced_storage"] = (["y", "x"],
+                                      np.loadtxt(static_input_folder + "NFMbalanced_GB_Storage.asc", skiprows=6))
+        ds["NFM_balanced_woodland"] = (["y", "x"],
+                                       np.loadtxt(static_input_folder + "NFMbalanced_GB_Woodland.asc", skiprows=6))
 
     return ds
