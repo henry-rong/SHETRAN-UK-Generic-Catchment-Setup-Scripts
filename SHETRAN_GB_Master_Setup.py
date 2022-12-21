@@ -19,6 +19,12 @@
 # 'process_single_catchment["single"]' controls 'multiprocessing["process_multiple_catchments"]'
 #
 #
+# --- NOTES:
+# This code did not run well on the blades last time I tried it  (for the UDM setup) and created easting
+# and northing files. I wonder whether this is due to the wrong version of xarray, but that is just a guess.
+# This script uses
+#
+#
 # --- MASKS:
 # Masks should be .asc
 # Mask paths used in multiprocessing will be:
@@ -29,7 +35,7 @@
 # Masks MUST align with the nearest 1000m! Else your climate data will be blank.
 # Masks MUST NOT have isolated cells / diagonally connected cells. This will stop the
 # SHETRAN Prepare.exe script from setting up. Remove these manually (and check any
-# corresponding cell maps).
+# corresponding cell maps). Later version of SHETRAN Prepare may correct for this issue.
 #
 # --- Northern Ireland:
 # NI datasets are not fully included into the setup and so are processed differently. They
@@ -39,24 +45,24 @@
 # incorrect in the initial version and the library files were corrected manually.
 #
 #
-# TODO
-# - Update the climate input data to most current period.
-# - Update the scripts so that they can take the UKCP18 data.
-# - Update the scripts to include other functions (e.g. UKCP18).
-# - Test the multiprocessing - this wasn't used in anger with
-#   the historical runs, so check against UKCP18. Check q works.
-# - Test climate data == TRUE.
-# - Add a mask checker to ensure that the cells start on the 1000m
-# - Consider that creating climate simulations with this will create
-#   incorrect model durations, as SHETRAN runs on calendar years, but
-#   Climate years are only 360 days.
-#
+# TODO:
+#  - Update the climate input data to most current period.
+#  - Update the scripts so that they can take the UKCP18 data.
+#  - Update the scripts to include other functions (e.g. UKCP18).
+#  - Test the multiprocessing - this wasn't used in anger with
+#    the historical runs, so check against UKCP18. Check q works.
+#  - Add a mask checker to ensure that the cells start on the 1000m
+#  - Consider that creating climate simulations with this will create
+#    incorrect model durations, as SHETRAN runs on calendar years, but
+#    climate years are only 360 days.
+#  - Load climate data in before running through catchments. As in 1a
+#    Quickload of the UKCP setup. One experiment with this managed to
+#    load all data and then cut it out, however the volume of data that
+#    was read in prior to the cutting was too waaaaaay large, causing
+#    python to crash.
+#  - Change the input DEM to have decimal places.
 # -------------------------------------------------------------
 
-# TODO:
-#   - Check that the cookie cutter problem is fixed.
-#   - Load climate data in before running through catchments. As in 1a Quickload of the UKCP setup.
-#   - Change the input DEM to have decimal places.
 
 # --- Load in Packages ----------------------------------------
 import SHETRAN_GB_Master_Setup_Functions as SF
@@ -90,30 +96,51 @@ end_time = '2010-12-31'
 # PYRAMID = 'C:/Users/nbs65/Newcastle University/PYRAMID - General/WP3/02 SHETRAN Simulations/'
 process_single_catchment = dict(
     single=False,
+<<<<<<< HEAD
     simulation_name='39008',
     mask_path="I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/60002_Mask.txt",
     output_folder="I:/SHETRAN_GB_2021/04_Historical_Simulations/historical_220601_UK_APM_Additions/60002_updated_mask/")
+=======
+    simulation_name='80004',
+    mask_path="I:/SHETRAN_GB_2021/02_Input_Data/superseded/1kmBngMasks/80004_Mask.txt",
+    output_folder="I:/SHETRAN_GB_2021/04_Historical_Simulations/historical_220601_UK_APM_Additions/updated_climate_data_with_diagonals/80004/")
+>>>>>>> f20f7c7 (Code version used to create UDM baseline simulations.)
 
 # Choose Single / Multiprocessing:
 multiprocessing = dict(
     process_multiple_catchments=not process_single_catchment["single"],
+<<<<<<< HEAD
     simulation_list_csv='C:/Users/nbs65/OneDrive - Newcastle University/Python Code/SHETRAN_generic_catchment_setup/Simulation_Setup_List.csv',
     mask_folder_prefix='I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/',
     output_folder_prefix='I:/SHETRAN_GB_2021/02_Input_Data/NFM Catchment Maps/NFM_Balanced/',
     use_multiprocessing=False,  # May only work on Blades?
     n_processes=30,  # For use on the blades
+=======
+    simulation_list_csv='I:/SHETRAN_GB_2021/01_Scripts/OFFLINE Generic Catchment Setup Script/Simulation_Setup_List.csv',
+    mask_folder_prefix='I:/SHETRAN_GB_2021/02_Input_Data/superseded/1kmBngMasks/', # I:\SHETRAN_GB_2021\02_Input_Data\superseded\1kmBngMasks
+    output_folder_prefix='I:/SHETRAN_GB_2021/04_Historical_Simulations/historical_220601_UK_APM_Additions/UDM_landcovers_2050/',
+    use_multiprocessing=False,  # May only work on Blades?
+    n_processes=28,  # For use on the blades
+>>>>>>> f20f7c7 (Code version used to create UDM baseline simulations.)
     use_groups=True,  # [True, False][1]
     group="1")  # String. Not used when use_groups == False.
 
 
 # --- Set Land Cover Types -------------------------------------
 
+<<<<<<< HEAD
 # Urban development: if you wish to use land cover from the Newcastle University Urban Development Model (SELECT ONE).
 Use_UrbanDevelopmentModel_2017 = False  # True /False (Default)
 Use_UrbanDevelopmentModel_SSP2_2050 = False
 Use_UrbanDevelopmentModel_SSP2_2080 = False
 Use_UrbanDevelopmentModel_SSP4_2050 = False
 Use_UrbanDevelopmentModel_SSP4_2080 = False
+=======
+# Urban development: if you wish to use land cover from the Newcastle University Urban Development Model
+Use_UrbanDevelopmentModel_2017 = False  # True /False (Default)
+Use_UrbanDevelopmentModel_2050 = True
+Use_UrbanDevelopmentModel_2080 = False
+>>>>>>> f20f7c7 (Code version used to create UDM baseline simulations.)
 
 # Natural Flood Management: if you wish to use additional forest and storage from Sayers and Partners (SELECT ONE).
 Use_NFM_Max_Woodland_Storage_Addition = False  # True /False (Default)
@@ -205,9 +232,18 @@ if __name__ == "__main__":
             print("Using multi-processing...")
 
             # Run the multiprocessing catchment setup:
+<<<<<<< HEAD
             SF.process_mp(mp_catchments=simulation_names, mp_mask_folders=simulation_masks,
                           mp_output_folders=output_folders, mp_simulation_startime=start_time,
                           mp_simulation_endtime=end_time, mp_static_inputs=static_data,
+=======
+            SF.process_mp(mp_catchments=simulation_names, 
+                          mp_mask_folders=simulation_masks,
+                          mp_output_folders=output_folders, 
+                          mp_simulation_startime=start_time,
+                          mp_simulation_endtime=end_time, 
+                          mp_static_inputs=static_data,
+>>>>>>> f20f7c7 (Code version used to create UDM baseline simulations.)
                           mp_produce_climate=create_climate_data,
                           mp_prcp_data_folder=rainfall_input_folder,
                           mp_tas_data_folder=temperature_input_folder,
