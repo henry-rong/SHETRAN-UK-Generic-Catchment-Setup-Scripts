@@ -73,7 +73,7 @@ import time
 # --- Set File Paths -------------------------------------------
 
 # Climate input folders:
-create_climate_data = False
+create_climate_data = True
 rainfall_input_folder = 'I:/CEH-GEAR downloads/'
 temperature_input_folder = 'I:/CHESS_T/'
 PET_input_folder = 'I:/CHESS/'
@@ -90,31 +90,34 @@ end_time = '2010-12-31'
 # PYRAMID = 'C:/Users/nbs65/Newcastle University/PYRAMID - General/WP3/02 SHETRAN Simulations/'
 process_single_catchment = dict(
     single=False,
-    simulation_name='4005',
-    mask_path="I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/4005_Mask.txt",
-    output_folder="I:/SHETRAN_GB_2021/04_Historical_Simulations/historical_220601_UK_APM_Additions/4008_UDM/")
+    simulation_name='39008',
+    mask_path="I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/60002_Mask.txt",
+    output_folder="I:/SHETRAN_GB_2021/04_Historical_Simulations/historical_220601_UK_APM_Additions/60002_updated_mask/")
 
 # Choose Single / Multiprocessing:
 multiprocessing = dict(
     process_multiple_catchments=not process_single_catchment["single"],
     simulation_list_csv='C:/Users/nbs65/OneDrive - Newcastle University/Python Code/SHETRAN_generic_catchment_setup/Simulation_Setup_List.csv',
     mask_folder_prefix='I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/',
-    output_folder_prefix='I:/SHETRAN_GB_2021/04_Historical_Simulations/historical_220601_UK_APM_Additions/UDM_landcovers/',
+    output_folder_prefix='I:/SHETRAN_GB_2021/02_Input_Data/NFM Catchment Maps/NFM_Balanced/',
     use_multiprocessing=False,  # May only work on Blades?
-    n_processes=3,  # For use on the blades
-    use_groups=False,  # [True, False][1]
-    group="0")  # String. Not used when use_groups == False.
+    n_processes=30,  # For use on the blades
+    use_groups=True,  # [True, False][1]
+    group="1")  # String. Not used when use_groups == False.
 
 
 # --- Set Land Cover Types -------------------------------------
 
-# Urban development: if you wish to use land cover from the Newcastle University Urban Development Model
-Use_UrbanDevelopmentModel_2017 = True  # True /False (Default)
-Use_UrbanDevelopmentModel_2050 = False
-Use_UrbanDevelopmentModel_2080 = False
+# Urban development: if you wish to use land cover from the Newcastle University Urban Development Model (SELECT ONE).
+Use_UrbanDevelopmentModel_2017 = False  # True /False (Default)
+Use_UrbanDevelopmentModel_SSP2_2050 = False
+Use_UrbanDevelopmentModel_SSP2_2080 = False
+Use_UrbanDevelopmentModel_SSP4_2050 = False
+Use_UrbanDevelopmentModel_SSP4_2080 = False
 
-# Natural Flood Risk Management: if you wish to use additional forest and storage from Sayers and Partners
-Use_NFM_Woodland_Storage_Addition = True  # True /False (Default)
+# Natural Flood Management: if you wish to use additional forest and storage from Sayers and Partners (SELECT ONE).
+Use_NFM_Max_Woodland_Storage_Addition = False  # True /False (Default)
+Use_NFM_Bal_Woodland_Storage_Addition = False
 
 
 # -------------------------------------------------------------
@@ -130,31 +133,34 @@ if __name__ == "__main__":
     # --- Import the Static Dataset -------------------------------
     static_data = SF.read_static_asc_csv(static_input_folder=raw_input_folder,
                                          UDM_2017=Use_UrbanDevelopmentModel_2017,
-                                         UDM_2050=Use_UrbanDevelopmentModel_2050,
-                                         UDM_2080=Use_UrbanDevelopmentModel_2080,
-                                         NFM_max=Use_NFM_Woodland_Storage_Addition)
+                                         UDM_SSP2_2050=Use_UrbanDevelopmentModel_SSP2_2050,
+                                         UDM_SSP2_2080=Use_UrbanDevelopmentModel_SSP2_2080,
+                                         UDM_SSP4_2050=Use_UrbanDevelopmentModel_SSP4_2050,
+                                         UDM_SSP4_2080=Use_UrbanDevelopmentModel_SSP4_2080,
+                                         NFM_max=Use_NFM_Max_Woodland_Storage_Addition,
+                                         NFM_bal=Use_NFM_Bal_Woodland_Storage_Addition)
 
     # --- Import the Climate Datasets -----------------------------
-    if create_climate_data:
-
-        # Find Climate Files to load for Each Variable:
-        start_year = int(start_time[0:4])
-        end_year = int(end_time[0:4])
-
-        print("  Reading rainfall...")
-        prcp_input_files = SF.find_rainfall_files(start_year, end_year)
-        rainfall_dataset = SF.read_climate_data(root_folder=rainfall_input_folder, filenames=prcp_input_files)
-
-        print("  Reading temperature...")
-        tas_input_files = SF.find_temperature_or_PET_files(temperature_input_folder, start_year, end_year)
-        temperature_dataset = SF.read_climate_data(root_folder=temperature_input_folder, filenames=tas_input_files)
-
-        print("  Reading PET...")
-        pet_input_files = SF.find_temperature_or_PET_files(PET_input_folder, start_year, end_year)
-        pet_dataset = SF.read_climate_data(root_folder=PET_input_folder, filenames=pet_input_files)
-
-    else:
-        rainfall_dataset = temperature_dataset = pet_dataset = None
+    # if create_climate_data:
+    #
+    #     # Find Climate Files to load for Each Variable:
+    #     start_year = int(start_time[0:4])
+    #     end_year = int(end_time[0:4])
+    #
+    #     print("  Reading rainfall...")
+    #     prcp_input_files = SF.find_rainfall_files(start_year, end_year)
+    #     rainfall_dataset = SF.read_climate_data(root_folder=rainfall_input_folder, filenames=prcp_input_files)
+    #
+    #     print("  Reading temperature...")
+    #     tas_input_files = SF.find_temperature_or_PET_files(temperature_input_folder, start_year, end_year)
+    #     temperature_dataset = SF.read_climate_data(root_folder=temperature_input_folder, filenames=tas_input_files)
+    #
+    #     print("  Reading PET...")
+    #     pet_input_files = SF.find_temperature_or_PET_files(PET_input_folder, start_year, end_year)
+    #     pet_dataset = SF.read_climate_data(root_folder=PET_input_folder, filenames=pet_input_files)
+    #
+    # else:
+    #     rainfall_dataset = temperature_dataset = pet_dataset = None
 
     # --- Call Functions to Process a Single Catchment ------------
     if process_single_catchment["single"]:
@@ -164,8 +170,8 @@ if __name__ == "__main__":
             mask_path=process_single_catchment["mask_path"],
             simulation_startime=start_time, simulation_endtime=end_time,
             output_subfolder=process_single_catchment["output_folder"], static_inputs=static_data,
-            produce_climate=create_climate_data, prcp_data=rainfall_dataset,
-            tas_data=temperature_dataset, pet_data=pet_dataset)
+            produce_climate=create_climate_data, prcp_data_folder=rainfall_input_folder,
+            tas_data_folder=temperature_input_folder, pet_data_folder=PET_input_folder)
 
     # --- Call Functions if Setting Up Multiple Catchments --------
 
@@ -202,8 +208,10 @@ if __name__ == "__main__":
             SF.process_mp(mp_catchments=simulation_names, mp_mask_folders=simulation_masks,
                           mp_output_folders=output_folders, mp_simulation_startime=start_time,
                           mp_simulation_endtime=end_time, mp_static_inputs=static_data,
-                          mp_produce_climate=create_climate_data, mp_prcp_data=rainfall_dataset,
-                          mp_tas_data=temperature_dataset, mp_pet_data=pet_dataset,
+                          mp_produce_climate=create_climate_data,
+                          mp_prcp_data_folder=rainfall_input_folder,
+                          mp_tas_data_folder=temperature_input_folder,
+                          mp_pet_data_folder=PET_input_folder,
                           num_processes=multiprocessing["n_processes"])
 
         else:
@@ -217,8 +225,8 @@ if __name__ == "__main__":
                                      output_subfolder=output_folders[c],
                                      static_inputs=static_data,
                                      produce_climate=create_climate_data,
-                                     prcp_data=rainfall_dataset,
-                                     tas_data=temperature_dataset,
-                                     pet_data=pet_dataset)
+                                     prcp_data_folder=rainfall_input_folder,
+                                     tas_data_folder=temperature_input_folder,
+                                     pet_data_folder=PET_input_folder)
                 time.sleep(1)
     print("Finished Processing Catchments")

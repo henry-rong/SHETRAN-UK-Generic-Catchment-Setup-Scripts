@@ -338,7 +338,7 @@ def find_temperature_or_PET_files(folder_path, year_from, year_to):
     return x
 
 
-def read_climate_data(root_folder, filenames):
+def read_climate_data(root_folder, filenames, variable, xll, yll, urx, ury,):
     first_loop = True
 
     # Run through the different decades, bolting the required catchment data into a common dataframe.
@@ -346,7 +346,14 @@ def read_climate_data(root_folder, filenames):
 
         print("    - ", file)
 
-        with xr.open_dataset(os.path.join(root_folder, file)) as DS:
+        with xr.open_dataset(os.path.join(root_folder, file)) as ds:
+
+            # Slice the dataset to only read in the necessary area of data:
+            if variable == 'rainfall_amount':
+                DS = ds.sel(y=slice(ury, yll),
+                            x=slice(xll, urx))  # Y coords reversed as CHESS lists them backwards
+            else:
+                DS = ds.sel(y=slice(yll, ury), x=slice(xll, urx))
 
             if first_loop:
                 DS_all_periods = DS
@@ -358,28 +365,24 @@ def read_climate_data(root_folder, filenames):
 
 
 def make_series(
-        met_dataset,
+        ms_root_folder, ms_filenames,
         xll, yll, urx, ury,
-        variable, series_startime, series_endtime,
+        ms_variable, series_startime, series_endtime,
         cat_coords, cell_ids, series_output_path, write_cell_id_map=False,
         map_output_path=None, map_hdrs=None):
     """
     Make and save climate time series for an individual variable.
     """
 
-    # print("-------- Cropping", variable, "to catchment.")
-    if variable == 'rainfall_amount':
-        ds_sel = met_dataset.sel(y=slice(ury, yll),
-                                 x=slice(xll, urx))  # Y coords reversed as CHESS lists them backwards
-    else:
-        ds_sel = met_dataset.sel(y=slice(yll, ury), x=slice(xll, urx))
+    met_dataset = read_climate_data(root_folder=ms_root_folder, filenames=ms_filenames, variable=ms_variable,
+                                    xll=xll, yll=yll, urx=urx, ury=ury)
 
     # sometimes pet is called peti, check that here just in case.
-    if variable == 'pet':
-        ds_sel_var = list(ds_sel.keys())
-        variable = [ds_sel_var[i] for i in np.arange(0, len(ds_sel_var)) if 'pet' in ds_sel_var[i]][0]
+    if ms_variable == 'pet':
+        ds_sel_var = list(met_dataset.keys())
+        ms_variable = [ds_sel_var[i] for i in np.arange(0, len(ds_sel_var)) if 'pet' in ds_sel_var[i]][0]
 
-    df = ds_sel[variable].to_dataframe()
+    df = met_dataset[ms_variable].to_dataframe()
     df = df.unstack(level=['y', 'x'])
 
     y_coords = list(df.columns.levels[1])
@@ -387,7 +390,7 @@ def make_series(
     x_coords = list(df.columns.levels[2])
     x_coords.sort(reverse=False)
 
-    dfs = df.loc[:, list(itertools.product([variable], y_coords, x_coords))]
+    dfs = df.loc[:, list(itertools.product([ms_variable], y_coords, x_coords))]
 
     # Subset on time period and cells in catchment
     # TODO Check that this doesn't delete data when cut out.
@@ -404,7 +407,7 @@ def make_series(
     df = df.iloc[:, cat_indices]
 
     # Convert from degK to degC if temperature
-    if variable == 'tas':
+    if ms_variable == 'tas':
         df -= 273.15
 
     # Write outputs
@@ -418,7 +421,7 @@ def make_series(
 
 
 def create_climate_files(climate_startime, climate_endtime, mask_path, catch, climate_output_folder,
-                         prcp_data, tas_data, pet_data):
+                         prcp_folder, tas_folder, pet_folder):
     """
     Create climate time series.
     """
@@ -442,14 +445,15 @@ def create_climate_files(climate_startime, climate_endtime, mask_path, catch, cl
 
     # Make precipitation time series and cell ID map
     print("-------- Processing rainfall data.")
+    prcp_input_files = find_rainfall_files(start_year, end_year)
     series_output_path = climate_output_folder + catch + '_Precip.csv'
     map_output_path = climate_output_folder + catch + '_Cells.asc'
 
     if not os.path.exists(series_output_path):
         make_series(
-            met_dataset=prcp_data,
+            ms_root_folder=prcp_folder, ms_filenames=prcp_input_files,
             xll=xll, yll=yll, urx=urx, ury=ury,
-            variable='rainfall_amount',
+            ms_variable='rainfall_amount',
             series_startime=climate_startime, series_endtime=climate_endtime,
             cat_coords=cat_coords, cell_ids=cell_ids, series_output_path=series_output_path,
             write_cell_id_map=True, map_output_path=map_output_path, map_hdrs=hdrs
@@ -472,12 +476,13 @@ def create_climate_files(climate_startime, climate_endtime, mask_path, catch, cl
 
     # Make temperature time series
     print("-------- Processing temperature data.")
+    tas_input_files = find_temperature_or_PET_files(tas_folder, start_year, end_year)
     series_output_path = climate_output_folder + catch + '_Temp.csv'
     if not os.path.exists(series_output_path):
         make_series(
-            met_dataset=tas_data,
+            ms_root_folder=tas_folder, ms_filenames=tas_input_files,
             xll=xll_centroid, yll=yll_centroid, urx=urx_centroid, ury=ury_centroid,
-            variable='tas',
+            ms_variable='tas',
             series_startime=climate_startime, series_endtime=climate_endtime,
             cat_coords=cat_coords_centroid, cell_ids=cell_ids, series_output_path=series_output_path
         )
@@ -486,12 +491,13 @@ def create_climate_files(climate_startime, climate_endtime, mask_path, catch, cl
     print("-------- Processing evapotranspiration data.")
 
     # Make PET time series
+    pet_input_files = find_temperature_or_PET_files(pet_folder, start_year, end_year)
     series_output_path = climate_output_folder + catch + '_PET.csv'
     if not os.path.exists(series_output_path):
         make_series(
-            met_dataset=pet_data,
+            ms_root_folder=pet_folder, ms_filenames=pet_input_files,
             xll=xll_centroid, yll=yll_centroid, urx=urx_centroid, ury=ury_centroid,
-            variable='pet',
+            ms_variable='pet',
             series_startime=climate_startime, series_endtime=climate_endtime,
             cat_coords=cat_coords_centroid, cell_ids=cell_ids, series_output_path=series_output_path
         )
@@ -499,7 +505,7 @@ def create_climate_files(climate_startime, climate_endtime, mask_path, catch, cl
 
 def process_catchment(
         catch, mask_path, simulation_startime, simulation_endtime, output_subfolder, static_inputs,
-        produce_climate=True, prcp_data=None, tas_data=None, pet_data=None  # ,q=None
+        produce_climate=True, prcp_data_folder=None, tas_data_folder=None, pet_data_folder=None  # ,q=None
 ):
     """
     Create all files needed to run shetran-prepare.
@@ -524,7 +530,7 @@ def process_catchment(
         if produce_climate:
             print(catch, ": Creating climate files...")
             create_climate_files(simulation_startime, simulation_endtime, mask_path, catch, output_subfolder,
-                                 prcp_data, tas_data, pet_data)
+                                 prcp_data_folder, tas_data_folder, pet_data_folder)
 
         # Get strings of vegetation and soil properties/details for library file
         # print(catch, ": creating vegetation (land use) and soil strings...")
@@ -544,8 +550,8 @@ def process_catchment(
 
 
 def process_mp(mp_catchments, mp_mask_folders, mp_output_folders, mp_simulation_startime,
-               mp_simulation_endtime, mp_static_inputs, mp_prcp_data, mp_tas_data,
-               mp_pet_data, mp_produce_climate=False, num_processes=10):
+               mp_simulation_endtime, mp_static_inputs, mp_prcp_data_folder, mp_tas_data_folder,
+               mp_pet_data_folder, mp_produce_climate=False, num_processes=10):
     manager = mp.Manager()
     # q = manager.Queue()
     pool = mp.Pool(num_processes)
@@ -555,7 +561,7 @@ def process_mp(mp_catchments, mp_mask_folders, mp_output_folders, mp_simulation_
         job = pool.apply_async(process_catchment,
                                (mp_catchments[catch], mp_mask_folders[catch], mp_simulation_startime,
                                 mp_simulation_endtime, mp_output_folders[catch], mp_static_inputs, mp_produce_climate,
-                                mp_prcp_data, mp_tas_data, mp_pet_data))
+                                mp_prcp_data_folder, mp_tas_data_folder, mp_pet_data_folder))
 
         jobs.append(job)
 
@@ -568,8 +574,13 @@ def process_mp(mp_catchments, mp_mask_folders, mp_output_folders, mp_simulation_
 
 
 def read_static_asc_csv(static_input_folder,
-                        UDM_2017=False, UDM_2050=False, UDM_2080=False,
-                        NFM_max=False, NFM_balanced=False):
+                        UDM_2017=False,
+                        UDM_SSP2_2050=False,
+                        UDM_SSP2_2080=False,
+                        UDM_SSP4_2050=False,
+                        UDM_SSP4_2080=False,
+                        NFM_max=False,
+                        NFM_bal=False):
     """
     This functions will load in the raw data for the UK, i.e. asc and csv files, and convert these to the dictionary
     object used in the setups. There should be 7 files with the following names, all in the same folder (argument):
@@ -602,8 +613,12 @@ def read_static_asc_csv(static_input_folder,
     """
 
     # Raise an error if there are multiple land covers selected:
-    if (UDM_2017 + UDM_2050 + UDM_2080) > 1:
-        raise ValueError("Multiple UDM land cover maps are 'True'; only a single map can be used.")
+    if (UDM_2017 + UDM_SSP2_2050 + UDM_SSP2_2080 + UDM_SSP4_2050 + UDM_SSP4_2080) > 1:
+        raise ValueError("Multiple UDM land cover maps are 'True' in setup script; only a single map can be used.")
+
+    # Raise an error if there are multiple NFM maps selected:
+    if (NFM_max + NFM_bal) > 1:
+        raise ValueError("Multiple NFM maps are 'True' in setup script; only a single map can be used.")
 
     # Load in the coordinate data (assumes all data has same coordinates:
     _, ncols, nrows, xll, yll, cellsize, _, _ = read_ascii_raster(static_input_folder + "SHETRAN_UK_DEM.asc",
@@ -617,10 +632,14 @@ def read_static_asc_csv(static_input_folder,
     # Set the desired land cover:
     if UDM_2017:
         LandCoverMap = "UDM_GB_LandCover_2017.asc"
-    elif UDM_2050:
-        LandCoverMap = "UDM_GB_LandCover_2050.asc"
-    elif UDM_2080:
-        LandCoverMap = "UDM_GB_LandCover_2080.asc"
+    elif UDM_SSP2_2050:
+        LandCoverMap = "UDM_GB_LandCover_SSP2_2050.asc"
+    elif UDM_SSP2_2080:
+        LandCoverMap = "UDM_GB_LandCover_SSP2_2080.asc"
+    elif UDM_SSP4_2050:
+        LandCoverMap = "UDM_GB_LandCover_SSP4_2050.asc"
+    elif UDM_SSP4_2080:
+        LandCoverMap = "UDM_GB_LandCover_SSP4_2080.asc"
     else:
         LandCoverMap = "SHETRAN_UK_LandCover.asc"
 
@@ -651,7 +670,7 @@ def read_static_asc_csv(static_input_folder,
                                  np.loadtxt(static_input_folder + "NFMmax_GB_Storage.asc", skiprows=6))
         ds["NFM_max_woodland"] = (["y", "x"],
                                   np.loadtxt(static_input_folder + "NFMmax_GB_Woodland.asc", skiprows=6))
-    if NFM_balanced:
+    if NFM_bal:
         ds["NFM_balanced_storage"] = (["y", "x"],
                                       np.loadtxt(static_input_folder + "NFMbalanced_GB_Storage.asc", skiprows=6))
         ds["NFM_balanced_woodland"] = (["y", "x"],
