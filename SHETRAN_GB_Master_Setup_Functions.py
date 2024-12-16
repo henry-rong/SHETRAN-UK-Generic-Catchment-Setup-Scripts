@@ -51,9 +51,39 @@ def read_ascii_raster(file_path, data_type=int, return_metadata=True):
     headers = headers.rstrip()
 
     if return_metadata:
-        return arr, ncols, nrows, xll, yll, cellsize, nodata, headers
+        return arr, ncols, nrows, xll, yll, cellsize, nodata, headers, dc
     else:
         return arr
+
+
+# Create a function that can write ascii style data:
+def write_ascii(
+        array: np = None,
+        ascii_ouput_path: str,
+        xllcorner: float,
+        yllcorner: float,
+        cellsize: float,
+        ncols: int = None,
+        nrows: int = None,
+        NODATA_value: int = -9999):
+
+        if len(array.shape) > 0:
+            nrows, ncols = array.shape
+
+        file_head = "\n".join(
+            ["ncols         " + str(ncols),
+             "nrows         " + str(nrows),
+             "xllcorner     " + str(xllcorner),
+             "yllcorner     " + str(yllcorner),
+             "cellsize      " + str(cellsize),
+             "NODATA_value  " + str(NODATA_value)])
+
+        with open(ascii_ouput_path, 'wb') as output_filepath:
+            np.savetxt(fname=output_filepath, X=array,
+                       delimiter=' ', newline='\n', fmt='%1.1f', comments="",
+                       header=file_head
+                       )
+
 
 
 def get_catchment_coords_ids(xll, yll, urx, ury, cellsize, mask):
@@ -268,7 +298,6 @@ def create_static_maps(static_input_dataset, xll, yll, ncols, nrows, cellsize,
 
     xur = xll + (ncols * cellsize) - 1
     yur = yll + (nrows * cellsize) - 1
-
     catch_data = static_input_dataset.sel(y=slice(yur, yll), x=slice(xll, xur))
 
     # If we have additional data loaded in that we want to cut out, add these to the fields above:
@@ -314,7 +343,7 @@ def create_static_maps(static_input_dataset, xll, yll, ncols, nrows, cellsize,
         if array_name == 'Soil':
             soil_arr = array
 
-    # Also save mask
+    # Also save mask:
     np.savetxt(
         static_output_folder + catch + '_Mask.asc', mask, fmt='%d', header=headers,
         comments=''
@@ -400,9 +429,37 @@ def make_series(
     all_coords = [(y, x) for _, y, x in tmp]
     cat_indices = []
     ind = 0
+
+    # Find the appropriate climate data for each pair of coordinates, searching nearby if the cell size is less than 1km
     for all_pair in all_coords:
+        # 1km SHETRAN - these should match nicely.
         if all_pair in cat_coords:
             cat_indices.append(ind)
+        # 500m SHETRAN
+        elif tuple([list(all_pair)[0]+500, list(all_pair)[1]]) in cat_coords:
+            cat_indices.append(ind)
+        elif tuple([list(all_pair)[0], list(all_pair)[1]+500]) in cat_coords:
+            cat_indices.append(ind)
+        elif tuple([list(all_pair)[0]+500, list(all_pair)[1]+500]) in cat_coords:
+            cat_indices.append(ind)
+        # And with smaller offset as temperature and pet coords are on offset grid.
+        elif tuple([list(all_pair)[0]-250, list(all_pair)[1]]) in cat_coords:
+            cat_indices.append(ind)
+        elif tuple([list(all_pair)[0], list(all_pair)[1]-250]) in cat_coords:
+            cat_indices.append(ind)
+        elif tuple([list(all_pair)[0]-250, list(all_pair)[1]-250]) in cat_coords:
+            cat_indices.append(ind)
+        elif tuple([list(all_pair)[0]+250, list(all_pair)[1]]) in cat_coords:
+            cat_indices.append(ind)
+        elif tuple([list(all_pair)[0], list(all_pair)[1]+250]) in cat_coords:
+            cat_indices.append(ind)
+        elif tuple([list(all_pair)[0]+250, list(all_pair)[1]+250]) in cat_coords:
+            cat_indices.append(ind)
+        elif tuple([list(all_pair)[0]-250, list(all_pair)[1]+250]) in cat_coords:
+            cat_indices.append(ind)
+        elif tuple([list(all_pair)[0]+250, list(all_pair)[1]-250]) in cat_coords:
+            cat_indices.append(ind)
+
         ind += 1
     df = df.iloc[:, cat_indices]
 
@@ -462,8 +519,8 @@ def create_climate_files(climate_startime, climate_endtime, mask_path, catch, cl
     # --- Temperature
 
     # Cell centre ll coords
-    xll_centroid = xll + 500.0
-    yll_centroid = yll + 500.0
+    xll_centroid = xll + cellsize/2
+    yll_centroid = yll + cellsize/2
 
     # Figure out coordinates of upper right
     urx_centroid = xll_centroid + (ncols - 1) * cellsize
@@ -472,7 +529,7 @@ def create_climate_files(climate_startime, climate_endtime, mask_path, catch, cl
     # Get coordinates and IDs of cells inside catchment
     cat_coords_centroid = []
     for yv, xv in cat_coords:
-        cat_coords_centroid.append((yv + 500.0, xv + 500.0))
+        cat_coords_centroid.append((yv + cellsize/2, xv + cellsize/2))
 
     # Make temperature time series
     print("-------- Processing temperature data.")
@@ -575,12 +632,9 @@ def process_mp(mp_catchments, mp_mask_folders, mp_output_folders, mp_simulation_
 
 def read_static_asc_csv(static_input_folder,
                         UDM_2017=False,
-                        UDM_SSP2_2050=False,
-                        UDM_SSP2_2080=False,
-                        UDM_SSP4_2050=False,
-                        UDM_SSP4_2080=False,
-                        NFM_max=False,
-                        NFM_bal=False):
+                        UDM_SSP2_2050=False, UDM_SSP2_2080=False,
+                        UDM_SSP4_2050=False, UDM_SSP4_2080=False,
+                        NFM_max=False, NFM_bal=False):
     """
     This functions will load in the raw data for the UK, i.e. asc and csv files, and convert these to the dictionary
     object used in the setups. There should be 7 files with the following names, all in the same folder (argument):
@@ -607,7 +661,7 @@ def read_static_asc_csv(static_input_folder,
     :param UDM_2017: True or False depending on whether you want to use the default CEH 2007 or the UDM baseline map.
     :param UDM_2050: True or False depending on whether you want to use the default CEH 2007 or the UDM 2050 map.
     :param UDM_2080: True or False depending on whether you want to use the default CEH 2007 or the UDM 2080 map.
-    :param NFM_balanced:
+    :param NFM_bal:
     :param NFM_max:
     :return:
     """
@@ -677,3 +731,12 @@ def read_static_asc_csv(static_input_folder,
                                        np.loadtxt(static_input_folder + "NFMbalanced_GB_Woodland.asc", skiprows=6))
 
     return ds
+
+
+def resolution_string(res):
+    if res not in [1000, 500, 100]:
+        print(f'Resolution is set to {str(res)}. This is incorrect and should instead be a numeric value of either '
+              f'1000, 500, or 100 .')
+    else:
+        return f'{str(res)}/'
+
