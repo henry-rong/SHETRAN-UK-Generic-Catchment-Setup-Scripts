@@ -4,7 +4,18 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="c2cb2013-10b6-48fd-9aaf-b4eeaea1d45f" name="Changes" comment="Updated notebooks" />
+    <list default="true" id="c2cb2013-10b6-48fd-9aaf-b4eeaea1d45f" name="Changes" comment="Notebook made for the creation of SHETRAN raster data. This has been done manually or in GIS programs in the past. This involves some minor updates to functions.">
+      <change afterPath="$PROJECT_DIR$/Code Testing Notebook.ipynb" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Data processin exedcution script.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Testing Climate Loop.ipynb" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test - read_met_data.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Create SHETRAN Raster Data.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/Create SHETRAN Raster Data.ipynb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/SHETRAN_GB_Master_Setup.py" beforeDir="false" afterPath="$PROJECT_DIR$/SHETRAN_GB_Master_Setup.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/SHETRAN_GB_Master_Setup_Functions.py" beforeDir="false" afterPath="$PROJECT_DIR$/SHETRAN_GB_Master_Setup_Functions.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Simulation_Setup_List.csv" beforeDir="false" afterPath="$PROJECT_DIR$/Simulation_Setup_List.csv" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -13,8 +24,8 @@
   <component name="FileTemplateManagerImpl">
     <option name="RECENT_TEMPLATES">
       <list>
-        <option value="Python Script" />
         <option value="Jupyter Notebook" />
+        <option value="Python Script" />
       </list>
     </option>
   </component>
@@ -51,14 +62,29 @@
     "RunOnceActivity.OpenProjectViewOnStart": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "WebServerToolWindowFactoryState": "false",
-    "last_opened_file_path": "C:/Users/nbs65/Newcastle University/PYRAMID - General/WP3/05 Scripts",
+    "last_opened_file_path": "I:/SHETRAN_GB_2021/01_Scripts/Other/OFFLINE Generic Catchment Setup Script/Shetran_setup_20230816h.py",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
     "node.js.selected.package.tslint": "(autodetect)",
-    "settings.editor.selected.configurable": "project.propVCSSupport.Mappings"
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "MTConfigurable",
+    "two.files.diff.last.used.file": "I:/SHETRAN_GB_2021/01_Scripts/Other/OFFLINE Generic Catchment Setup Script/Shetran_setup_20230816h.py",
+    "vue.rearranger.settings.migration": "true"
+  },
+  "keyToStringList": {
+    "com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File": [
+      "Jupyter"
+    ]
   }
 }]]></component>
+  <component name="PyConsoleOptionsProvider">
+    <option name="myPythonConsoleState">
+      <console-settings>
+        <option name="useSoftWraps" value="true" />
+      </console-settings>
+    </option>
+  </component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="C:\Users\nbs65\OneDrive - Newcastle University\Python Code\SHETRAN_generic_catchment_setup" />
@@ -88,9 +114,12 @@
       <method v="2" />
     </configuration>
     <configuration name="SHETRAN_GB_Master_Setup" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
-      <module name="generic_catchment_setup" />
+      <module name="SHETRAN_generic_catchment_setup" />
       <option name="INTERPRETER_OPTIONS" value="" />
       <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
       <option name="SDK_HOME" value="" />
       <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
       <option name="IS_MODULE_SDK" value="true" />
@@ -150,6 +179,11 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
+    <list>
+      <item itemvalue="Python.main" />
+      <item itemvalue="Python.SHETRAN basic Setup" />
+      <item itemvalue="Python.SHETRAN_GB_Master_Setup" />
+    </list>
     <recent_temporary>
       <list>
         <item itemvalue="Python.SHETRAN_GB_Master_Setup" />
@@ -179,6 +213,46 @@
       <workItem from="1660583538019" duration="6812000" />
       <workItem from="1660736856627" duration="1982000" />
       <workItem from="1660815572057" duration="28020000" />
+      <workItem from="1664897379016" duration="146000" />
+      <workItem from="1665066784268" duration="508000" />
+      <workItem from="1665575176508" duration="2343000" />
+      <workItem from="1665749083514" duration="614000" />
+      <workItem from="1666691164971" duration="3669000" />
+      <workItem from="1666695336040" duration="3076000" />
+      <workItem from="1666713305975" duration="741000" />
+      <workItem from="1666717885558" duration="1070000" />
+      <workItem from="1666860313740" duration="980000" />
+      <workItem from="1667493522724" duration="1318000" />
+      <workItem from="1667816356766" duration="136000" />
+      <workItem from="1669138756654" duration="1628000" />
+      <workItem from="1669222111061" duration="20051000" />
+      <workItem from="1669386187094" duration="8727000" />
+      <workItem from="1669629265176" duration="73000" />
+      <workItem from="1669629340153" duration="21320000" />
+      <workItem from="1669712935991" duration="2303000" />
+      <workItem from="1669715275512" duration="59000" />
+      <workItem from="1669722373241" duration="16572000" />
+      <workItem from="1669824739601" duration="2050000" />
+      <workItem from="1669827495598" duration="4637000" />
+      <workItem from="1669887981544" duration="6440000" />
+      <workItem from="1670234415699" duration="717000" />
+      <workItem from="1670237313141" duration="14269000" />
+      <workItem from="1670848920392" duration="1569000" />
+      <workItem from="1671560240596" duration="1033000" />
+      <workItem from="1671621807035" duration="19912000" />
+      <workItem from="1673013054804" duration="116000" />
+      <workItem from="1673013179981" duration="2902000" />
+      <workItem from="1673871898263" duration="115000" />
+      <workItem from="1676990934614" duration="1862000" />
+      <workItem from="1678372880401" duration="468000" />
+      <workItem from="1680703653747" duration="1107000" />
+      <workItem from="1680704783337" duration="620000" />
+      <workItem from="1695035404112" duration="4424000" />
+      <workItem from="1734084110974" duration="643000" />
+      <workItem from="1734087464932" duration="2718000" />
+      <workItem from="1734103151450" duration="6836000" />
+      <workItem from="1734344693380" duration="15987000" />
+      <workItem from="1734366659859" duration="15325000" />
     </task>
     <task id="LOCAL-00001" summary="Initial Commit! Working files for generic SHETRAN catchment setup.&#10;Post Simulation Functions not yet well-developed.">
       <created>1660834558228</created>
@@ -208,7 +282,64 @@
       <option name="project" value="LOCAL" />
       <updated>1661269961464</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="Amy is testing if it works">
+      <created>1664895027001</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1664895027001</updated>
+    </task>
+    <task id="LOCAL-00006" summary="Amy is testing if it works - removing comment">
+      <created>1664895232817</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1664895232817</updated>
+    </task>
+    <task id="LOCAL-00007" summary="Updated functions and setup to read all climate data before looping through catchments. This saves reloading data each time a catchment is processed. This is much  faster. Updated for single processing - needs updating for multiprocessing / multiple catchments.">
+      <created>1669659211791</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1669659211792</updated>
+    </task>
+    <task id="LOCAL-00008" summary="Updated functions and setup to read all climate data before looping through catchments for processing multiple catchments.">
+      <created>1669723197853</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1669723197853</updated>
+    </task>
+    <task id="LOCAL-00009" summary="Updated (1) to allow for inclusion of different land cover maps (instead of the default CEH land cover map) and (2) to output NFM woodland and storage maps that can be used alongside the NFM executables.">
+      <created>1669831629474</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1669831629474</updated>
+    </task>
+    <task id="LOCAL-00010" summary="Updated to allow for NFM Balanced map as well as the NFM Max.">
+      <created>1669832204609</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1669832204609</updated>
+    </task>
+    <task id="LOCAL-00011" summary="Code version used to create UDM baseline simulations.">
+      <created>1671625729686</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1671625729686</updated>
+    </task>
+    <task id="LOCAL-00012" summary="Notebook made for the creation of SHETRAN raster data. This has been done manually or in GIS programs in the past. This involves some minor updates to functions.">
+      <option name="closed" value="true" />
+      <created>1734369246040</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1734369246040</updated>
+    </task>
+    <option name="localTasksCounter" value="13" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -225,7 +356,7 @@
                   <entry key="branch">
                     <value>
                       <list>
-                        <option value="master" />
+                        <option value="main" />
                       </list>
                     </value>
                   </entry>
@@ -241,11 +372,19 @@
     <MESSAGE value="Initial Commit! Working files for generic SHETRAN catchment setup.&#10;Post Simulation Functions not yet well-developed." />
     <MESSAGE value="Added SHETRAN python Example Notebook, renamed notebook and moved some code from one to the other." />
     <MESSAGE value="Updated notebooks" />
-    <option name="LAST_COMMIT_MESSAGE" value="Updated notebooks" />
+    <MESSAGE value="Amy is testing if it works" />
+    <MESSAGE value="Amy is testing if it works - removing comment" />
+    <MESSAGE value="Updated functions and setup to read all climate data before looping through catchments. This saves reloading data each time a catchment is processed. This is much  faster. Updated for single processing - needs updating for multiprocessing / multiple catchments." />
+    <MESSAGE value="Updated functions and setup to read all climate data before looping through catchments for processing multiple catchments." />
+    <MESSAGE value="Updated (1) to allow for inclusion of different land cover maps (instead of the default CEH land cover map) and (2) to output NFM woodland and storage maps that can be used alongside the NFM executables." />
+    <MESSAGE value="Updated to allow for NFM Balanced map as well as the NFM Max." />
+    <MESSAGE value="Code version used to create UDM baseline simulations." />
+    <MESSAGE value="Notebook made for the creation of SHETRAN raster data. This has been done manually or in GIS programs in the past. This involves some minor updates to functions." />
+    <option name="LAST_COMMIT_MESSAGE" value="Notebook made for the creation of SHETRAN raster data. This has been done manually or in GIS programs in the past. This involves some minor updates to functions." />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/generic_catchment_setup$main.coverage" NAME="main Coverage Results" MODIFIED="1658938046709" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/generic_catchment_setup$SHETRAN_GB_Master_Setup.coverage" NAME="SHETRAN_GB_Master_Setup Coverage Results" MODIFIED="1659024213552" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/generic_catchment_setup$SHETRAN_basic_Setup.coverage" NAME="SHETRAN basic Setup Coverage Results" MODIFIED="1658940153277" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/generic_catchment_setup$SHETRAN_GB_Master_Setup.coverage" NAME="SHETRAN_GB_Master_Setup Coverage Results" MODIFIED="1659024213552" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>

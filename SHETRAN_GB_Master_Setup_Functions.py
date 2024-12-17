@@ -85,6 +85,17 @@ def write_ascii(
                        )
 
 
+# Define a function to calculate the mean of valid neighbors:
+def fill_holes(values):
+    # This will fill all holes with a value in a neighboring cell.
+
+    center = values[4]  # Center pixel in the 3x3 window
+    if np.isnan(center):  # If the center is a hole
+        neighbors = values[np.arange(len(values)) != 4]  # Exclude the center
+        valid_neighbors = neighbors[~np.isnan(neighbors)]  # Keep valid neighbors
+        if len(valid_neighbors) > 0:  # Fill only if there are valid neighbors
+            return valid_neighbors.mean()
+    return center  # Return the original value if not a hole
 
 def get_catchment_coords_ids(xll, yll, urx, ury, cellsize, mask):
     """Find coordinates of cells in catchment and assign IDs."""
