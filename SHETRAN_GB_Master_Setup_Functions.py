@@ -26,7 +26,7 @@ import numpy as np
 
 
 # --- Create Functions ----------------------------------------
-def read_ascii_raster(file_path, data_type=int, return_metadata=True):
+def read_ascii_raster(file_path, data_type=int, return_metadata=True, replace_NA=False):
     """
     Read ascii raster into numpy array, optionally returning headers.
     """
@@ -46,6 +46,10 @@ def read_ascii_raster(file_path, data_type=int, return_metadata=True):
     nodata = float(dc['NODATA_value'])
 
     arr = np.loadtxt(file_path, dtype=data_type, skiprows=6)
+
+    # If required, swap out the no data values for np.nan:
+    if replace_NA:
+       arr[arr==nodata] = np.nan
 
     headers = '\n'.join(headers)
     headers = headers.rstrip()
@@ -96,6 +100,22 @@ def fill_holes(values):
         if len(valid_neighbors) > 0:  # Fill only if there are valid neighbors
             return valid_neighbors.mean()
     return center  # Return the original value if not a hole
+
+
+# Function for aggregating numpy cells:
+def cell_reduce(array, block_size, func=np.nanmean):
+    """
+    Resample a NumPy array by reducing its resolution using block aggregation.
+    Parameters:
+    - array: Input NumPy array.
+    - block_size: Factor by which to reduce the resolution.
+    - func: Aggregation function (e.g., np.nanmean, np.nanmin, np.nanmax).
+            Recomended to use nanmean etc. else you will lose coverage
+    """
+    shape = (array.shape[0] // block_size, block_size, array.shape[1] // block_size, block_size,)
+
+    return func(array.reshape(shape), axis=(1, 3), )
+
 
 def get_catchment_coords_ids(xll, yll, urx, ury, cellsize, mask):
     """Find coordinates of cells in catchment and assign IDs."""
