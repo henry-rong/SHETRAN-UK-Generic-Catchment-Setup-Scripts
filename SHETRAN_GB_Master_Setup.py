@@ -1,68 +1,80 @@
-# -------------------------------------------------------------
-# SHETRAN GB Master Simulation Creator
-# -------------------------------------------------------------
-# Ben Smith, adapted from previous codes.
-# 27/07/2022
-# -------------------------------------------------------------
-#
-# This script should be a default script for generating SHETRAN files, it should be usable by everyone
-# for all setups. If you change the setup then please change this code so that is more generic (unless
-# that makes it super complex). This script often uses 'Try', which means that sometimes errors are hidden.
-# Look to change that over time.
-#
-#
-# --- USER INSTRUCTIONS:
-# The user should only have to edit:
-#  --- Set File Paths
-#  --- Set Processing Methods
-# All other code should be fixed. Make sure that you update the correct parts of the dictionaries.
-# 'process_single_catchment["single"]' controls 'multiprocessing["process_multiple_catchments"]'
-#
-#
-# --- NOTES:
-# This code did not run well on the blades last time I tried it  (for the UDM setup) and created easting
-# and northing files. I wonder whether this is due to the wrong version of xarray, but that is just a guess.
-# This script uses
-#
-#
-# --- MASKS:
-# Masks should be .asc
-# Mask paths used in multiprocessing will be:
-#   mask_folder_prefix + sim_mask_path + sim_name + Mask.txt
-#   Leave sim_mask_path in the csv blank if there are no additional bits to add in here.
-#   mask_folder_prefix can be changed to "" and the prefixed folder specified in the CSV
-#    instead if more specific naming convention is needed.
-# Masks MUST align with the nearest 1000m! Else your climate data will be blank.
-# Masks MUST NOT have isolated cells / diagonally connected cells. This will stop the
-# SHETRAN Prepare.exe script from setting up. Remove these manually (and check any
-# corresponding cell maps). Later version of SHETRAN Prepare may correct for this issue.
-#
-# --- Northern Ireland:
-# NI datasets are not fully included into the setup and so are processed differently. They
-# do not have gridded climate data, instead, this is available in processed form for a
-# selection of catchments (this was provided by Helen He at UEA). These only run until the
-# end of 2010. The Northern Ireland runs should run from 01/01/1980 - 01/01/2011. This was
-# incorrect in the initial version and the library files were corrected manually.
-#
-#
-# TODO:
-#  - Update the climate input data to most current period.
-#  - Update the scripts so that they can take the UKCP18 data.
-#  - Update the scripts to include other functions (e.g. UKCP18).
-#  - Test the multiprocessing - this wasn't used in anger with
-#    the historical runs, so check against UKCP18. Check q works.
-#  - Add a mask checker to ensure that the cells start on the 1000m
-#  - Consider that creating climate simulations with this will create
-#    incorrect model durations, as SHETRAN runs on calendar years, but
-#    climate years are only 360 days.
-#  - Load climate data in before running through catchments. As in 1a
-#    Quickload of the UKCP setup. One experiment with this managed to
-#    load all data and then cut it out, however the volume of data that
-#    was read in prior to the cutting was too waaaaaay large, causing
-#    python to crash.
-#  - Change the input DEM to have decimal places.
-# -------------------------------------------------------------
+"""
+-------------------------------------------------------------
+SHETRAN GB Master Simulation Creator
+-------------------------------------------------------------
+Ben Smith, adapted from previous codes.
+27/07/2022
+-------------------------------------------------------------
+This script should be a default script for generating SHETRAN files, it should be usable by everyone
+for all setups. If you change the setup then please change this code so that is more generic (unless
+that makes it super complex). This script often uses 'Try', which means that sometimes errors are hidden.
+Look to change that over time.
 
+--- USER INSTRUCTIONS:
+The user should only have to edit:
+ --- Set File Paths
+ --- Set Processing Methods
+All other code should be fixed. Make sure that you update the correct parts of the dictionaries.
+'process_single_catchment["single"]' controls 'multiprocessing["process_multiple_catchments"]'
+
+--- NOTES:
+This code did not run well on the blades last time I tried it  (for the UDM setup) and created easting
+and northing files. I wonder whether this is due to the wrong version of xarray, but that is just a guess.
+This script uses...
+
+--- MASKS:
+Masks should be .asc
+Mask paths used in multiprocessing will be:
+  mask_folder_prefix + sim_mask_path + sim_name + Mask.txt
+  Leave sim_mask_path in the csv blank if there are no additional bits to add in here.
+  mask_folder_prefix can be changed to "" and the prefixed folder specified in the CSV
+   instead if more specific naming convention is needed.
+Masks MUST align with the nearest 1000m! Else your climate data will be blank.
+Masks MUST NOT have isolated cells / diagonally connected cells. This will stop the
+SHETRAN Prepare.exe script from setting up. Remove these manually (and check any
+corresponding cell maps). Later version of SHETRAN Prepare may correct for this issue.
+
+--- Resolution
+The models can be set up in three resolutions: 1000m, 500m and 100m.
+
+This is controlled simply by the mask, which must be of the desired resolution and align with
+the 1000m, 500m or 100m grid. The input data should also match that resolution, this is done
+automatically by selecting the appropriate data folder.
+
+If the mask resolution does not match the static data resolution you will get an ERROR similar to:
+    >> boolean index did not match indexed array along dimension 0;
+    >> dimension is 12 but corresponding boolean dimension is 6
+This is probably because one of the two have incorrect file paths.
+
+--- Northern Ireland:
+NI datasets are not fully included into the setup and so are processed differently. They
+do not have gridded climate data, instead, this is available in processed form for a
+selection of catchments (this was provided by Helen He at UEA). These only run until the
+end of 2010. The Northern Ireland runs should run from 01/01/1980 - 01/01/2011. This was
+incorrect in the initial version and the library files were corrected manually.
+TODO:
+ - Update the climate input data to most current period.
+ - Update the scripts so that they can take the UKCP18 data.
+ - Update the scripts to include other functions (e.g. UKCP18).
+ - Test the multiprocessing - this wasn't used in anger with
+   the historical runs, so check against UKCP18. Check q works.
+ - Add a mask checker to ensure that the cells start on the 1000m
+ - Consider that creating climate simulations with this will create
+   incorrect model durations, as SHETRAN runs on calendar years, but
+   climate years are only 360 days.
+ - Load climate data in before running through catchments. As in 1a
+   Quickload of the UKCP setup. One experiment with this managed to
+   load all data and then cut it out, however the volume of data that
+   was read in prior to the cutting was waaaaaay too large, causing
+   python to crash.
+ - Change the input DEM to have decimal places.
+ - Consider changing Vegetation_Details.csv to LandCover_details.csv
+ - RECENT:
+     - Fix issues with the Xarray.
+     - Check that the vegetation details are outputted.
+     - Setup 100m.
+-------------------------------------------------------------
+"""
 
 # --- Load in Packages ----------------------------------------
 import SHETRAN_GB_Master_Setup_Functions as SF
@@ -84,63 +96,47 @@ rainfall_input_folder = 'I:/CEH-GEAR downloads/'
 temperature_input_folder = 'I:/CHESS_T/'
 PET_input_folder = 'I:/CHESS/'
 
-# Static Input Data Folder:
-raw_input_folder = "I:/SHETRAN_GB_2021/02_Input_Data/Raw ASCII inputs for SHETRAN UK/"
-
 # Set Model period: 'yyyy-mm-dd'
 start_time = '1980-01-01'
-end_time = '2010-12-31'
+end_time = '2011-01-01'
+
+# # Model Resolution:
+# resolution = 1000  # [Cell size in meters - options are: 1000, 500, 100]
+# resolution = resolution_string(resolution)
+
+# Static Input Data Folder:
+raw_input_folder = "I:/SHETRAN_GB_2021/02_Input_Data/Raw ASCII inputs for SHETRAN UK/1000m/"
 
 
 # --- Set Processing Methods -----------------------------------
 # PYRAMID = 'C:/Users/nbs65/Newcastle University/PYRAMID - General/WP3/02 SHETRAN Simulations/'
 process_single_catchment = dict(
-    single=False,
-<<<<<<< HEAD
-    simulation_name='39008',
-    mask_path="I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/60002_Mask.txt",
-    output_folder="I:/SHETRAN_GB_2021/04_Historical_Simulations/historical_220601_UK_APM_Additions/60002_updated_mask/")
-=======
-    simulation_name='80004',
-    mask_path="I:/SHETRAN_GB_2021/02_Input_Data/superseded/1kmBngMasks/80004_Mask.txt",
-    output_folder="I:/SHETRAN_GB_2021/04_Historical_Simulations/historical_220601_UK_APM_Additions/updated_climate_data_with_diagonals/80004/")
->>>>>>> f20f7c7 (Code version used to create UDM baseline simulations.)
+    single=True,
+    simulation_name='7006',
+    mask_path="I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/7006_Mask.txt",
+    # mask_path="S:/00 - Catchment Setups/Testing setup/7006.txt",
+    output_folder="S:/00 - Catchment Setups/Testing setup/")
 
 # Choose Single / Multiprocessing:
 multiprocessing = dict(
     process_multiple_catchments=not process_single_catchment["single"],
-<<<<<<< HEAD
-    simulation_list_csv='C:/Users/nbs65/OneDrive - Newcastle University/Python Code/SHETRAN_generic_catchment_setup/Simulation_Setup_List.csv',
-    mask_folder_prefix='I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/',
-    output_folder_prefix='I:/SHETRAN_GB_2021/02_Input_Data/NFM Catchment Maps/NFM_Balanced/',
-    use_multiprocessing=False,  # May only work on Blades?
+    simulation_list_csv='I:/SHETRAN_GB_2021/01_Scripts/Other/OFFLINE Generic Catchment Setup Script/Simulation_Setup_List.csv',
+    mask_folder_prefix='I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/',  # 1kmBngMasks_Processed/', # I:\SHETRAN_GB_2021\02_Input_Data\superseded\1kmBngMasks
+    output_folder_prefix="I:/SHETRAN_GB_2021/02_Input_Data/Catchment Maps - UDM/UDM_GB_LandCover_SSP4_2080/",  # 'I:/SHETRAN_GB_2021/02_Input_Data/NFM Catchment Maps/NFM_Maximum/',
+    use_multiprocessing=True,  # May only work on Blades?
     n_processes=30,  # For use on the blades
-=======
-    simulation_list_csv='I:/SHETRAN_GB_2021/01_Scripts/OFFLINE Generic Catchment Setup Script/Simulation_Setup_List.csv',
-    mask_folder_prefix='I:/SHETRAN_GB_2021/02_Input_Data/superseded/1kmBngMasks/', # I:\SHETRAN_GB_2021\02_Input_Data\superseded\1kmBngMasks
-    output_folder_prefix='I:/SHETRAN_GB_2021/04_Historical_Simulations/historical_220601_UK_APM_Additions/UDM_landcovers_2050/',
-    use_multiprocessing=False,  # May only work on Blades?
-    n_processes=28,  # For use on the blades
->>>>>>> f20f7c7 (Code version used to create UDM baseline simulations.)
     use_groups=True,  # [True, False][1]
     group="1")  # String. Not used when use_groups == False.
 
 
-# --- Set Land Cover Types -------------------------------------
+# --- Set Non-Default Land Cover Types -------------------------------------
 
-<<<<<<< HEAD
 # Urban development: if you wish to use land cover from the Newcastle University Urban Development Model (SELECT ONE).
-Use_UrbanDevelopmentModel_2017 = False  # True /False (Default)
+Use_UrbanDevelopmentModel_2017 = False  # True / False (Default)
 Use_UrbanDevelopmentModel_SSP2_2050 = False
 Use_UrbanDevelopmentModel_SSP2_2080 = False
 Use_UrbanDevelopmentModel_SSP4_2050 = False
 Use_UrbanDevelopmentModel_SSP4_2080 = False
-=======
-# Urban development: if you wish to use land cover from the Newcastle University Urban Development Model
-Use_UrbanDevelopmentModel_2017 = False  # True /False (Default)
-Use_UrbanDevelopmentModel_2050 = True
-Use_UrbanDevelopmentModel_2080 = False
->>>>>>> f20f7c7 (Code version used to create UDM baseline simulations.)
 
 # Natural Flood Management: if you wish to use additional forest and storage from Sayers and Partners (SELECT ONE).
 Use_NFM_Max_Woodland_Storage_Addition = False  # True /False (Default)
@@ -232,18 +228,12 @@ if __name__ == "__main__":
             print("Using multi-processing...")
 
             # Run the multiprocessing catchment setup:
-<<<<<<< HEAD
-            SF.process_mp(mp_catchments=simulation_names, mp_mask_folders=simulation_masks,
-                          mp_output_folders=output_folders, mp_simulation_startime=start_time,
-                          mp_simulation_endtime=end_time, mp_static_inputs=static_data,
-=======
             SF.process_mp(mp_catchments=simulation_names, 
                           mp_mask_folders=simulation_masks,
                           mp_output_folders=output_folders, 
                           mp_simulation_startime=start_time,
                           mp_simulation_endtime=end_time, 
                           mp_static_inputs=static_data,
->>>>>>> f20f7c7 (Code version used to create UDM baseline simulations.)
                           mp_produce_climate=create_climate_data,
                           mp_prcp_data_folder=rainfall_input_folder,
                           mp_tas_data_folder=temperature_input_folder,
