@@ -62,31 +62,32 @@ def read_ascii_raster(file_path, data_type=int, return_metadata=True, replace_NA
 
 # Create a function that can write ascii style data:
 def write_ascii(
-        array: np = None,
+        array: np,
         ascii_ouput_path: str,
         xllcorner: float,
         yllcorner: float,
         cellsize: float,
         ncols: int = None,
         nrows: int = None,
-        NODATA_value: int = -9999):
+        NODATA_value: int = -9999,
+        data_format: str = '%1.1f'):
 
-        if len(array.shape) > 0:
-            nrows, ncols = array.shape
+    if len(array.shape) > 0:
+        nrows, ncols = array.shape
 
-        file_head = "\n".join(
-            ["ncols         " + str(ncols),
-             "nrows         " + str(nrows),
-             "xllcorner     " + str(xllcorner),
-             "yllcorner     " + str(yllcorner),
-             "cellsize      " + str(cellsize),
-             "NODATA_value  " + str(NODATA_value)])
+    file_head = "\n".join(
+        ["ncols         " + str(ncols),
+         "nrows         " + str(nrows),
+         "xllcorner     " + str(xllcorner),
+         "yllcorner     " + str(yllcorner),
+         "cellsize      " + str(cellsize),
+         "NODATA_value  " + str(NODATA_value)])
 
-        with open(ascii_ouput_path, 'wb') as output_filepath:
-            np.savetxt(fname=output_filepath, X=array,
-                       delimiter=' ', newline='\n', fmt='%1.1f', comments="",
-                       header=file_head
-                       )
+    with open(ascii_ouput_path, 'wb') as output_filepath:
+        np.savetxt(fname=output_filepath, X=array,
+                   delimiter=' ', newline='\n', fmt=data_format, comments="",
+                   header=file_head
+                   )
 
 
 # Define a function to calculate the mean of valid neighbors:
