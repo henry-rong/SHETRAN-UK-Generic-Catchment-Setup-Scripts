@@ -1,32 +1,16 @@
-import os
-import zipfile
-
-import rasterio
-from rasterio.merge import merge
 import numpy as np
-
-from scipy.ndimage import generic_filter
-
-import geopandas as gpd
-
-import pandas as pd
-
 import rasterio.features
-from shapely.geometry import box
+import math
+from rasterio.warp import calculate_default_transform, reproject, Resampling
+from rasterio.merge import merge
+from rasterio.transform import from_bounds
 
 root = 'I:/SHETRAN_GB_2021/02_Input_Data/National Data Inputs for SHETRAN UK/'
-resolution_output = 500
+resolution_output = 1000
+print(resolution_output)
 
-def write_ascii(
-        array: np,
-        ascii_ouput_path: str,
-        xllcorner: float,
-        yllcorner: float,
-        cellsize: float,
-        ncols: int = None,
-        nrows: int = None,
-        NODATA_value: int = -9999,
-        data_format: str = '%1.1f'):
+def write_ascii(array: np, ascii_ouput_path: str, xllcorner: float, yllcorner: float, cellsize: float,
+                ncols: int = None, nrows: int = None, NODATA_value: int = -9999, data_format: str = '%1.1f'):
 
         if len(array.shape) > 0:
             nrows, ncols = array.shape
@@ -104,187 +88,88 @@ def fill_holes(values):
     return center  # Return the original value if not a hole
 
 
-# ----------------
+# Define a function for getting the extents of a shapefile and expanding these to match a desired raster resolution:
+def get_generous_bounds(shapefile, resolution):
 
-# # Define the reclassification dictionary
-# reclass_dict = {  # (CEH LCM to SHETRAN Classes)
-#     1: 4, 2: 5, 3: 1,
-#     4: 3, 5: 3, 6: 3, 7: 3,8: 3,
-#     9: 6, 10: 6, 11: 6, 12: 6, 13: 6,
-#     14: 2, 15: 2, 16: 2,  17: 2,  18: 2,  19: 2, 20: 2, 21: 2,
-#     22: 7, 23: 7
-# }
+    extents = shapefile.bounds
 
-# List the shapefiles in GB:
-# GB_LCM  = os.path.join(root, 'Land Use Inputs/LCM_2007_vector_GB_Digimap/lcm-2007-vec_5779248')
-# GB_LCM_files = os.listdir(GB_LCM)
-# shapefiles = [os.path.join(GB_LCM, sf) for sf in GB_LCM_files if sf.endswith('.shp')]
+    xmin = math.floor(extents['minx'].min()/resolution) * resolution
+    ymin = math.floor(extents['miny'].min()/resolution) * resolution
+    xmax = math.ceil( extents['maxx'].max()/resolution) * resolution
+    ymax = math.ceil( extents['maxy'].max()/resolution) * resolution
 
-# NI_LCM = os.path.join(root, 'Land Use Inputs/LCM_2007_vector_NI_Digimap/lcm-2007-vec-ni_4578539')
-# NI_LCM_files = os.listdir(NI_LCM)
-# shapefiles = [os.path.join(NI_LCM, sf) for sf in NI_LCM_files if sf.endswith('.shp')]
+    return xmin, ymin, xmax, ymax
 
-# ----------------
-# # Run through the files (including NI):
-# counter = 1
-# for shapefile in shapefiles:
-#     print(counter, '/', len(shapefiles))
-#     # Read in the data:
-#     sf = gpd.read_file(shapefile)
-#
-#     # Reproject the Northern Ireland file into BNG (from ING):
-#     if 'LCM_2007_vector_NI_Digimap' in shapefile:
-#         sf = sf.to_crs(epsg=27700)
-#
-#     # Reclassify from LCM to SHETRAN classes'
-#     sf['SHETRAN'] = sf['INTCODE'].map(reclass_dict)
-#
-#     # Cull the columns you don't need:
-#     columns = sf.columns
-#     columns = [column for column in columns if column not in ['SHETRAN', 'geometry']]
-#     sf.drop(columns, inplace=True, axis=1)
-#
-#     # Dissolve the polygons to reduce file size:
-#     sf_dissolved = sf.dissolve('SHETRAN')
-#
-#     # Save the updated shapefile:
-#     sf_dissolved.to_file(
-#         os.path.join(root, "Land Use Inputs/Reclassified shapefiles", os.path.basename(shapefile))
-#     )
-#
-#     counter += 1
+# Apply majority filter
+def majority_filter(values):
+    unique, counts = np.unique(values[values != -9999], return_counts=True)
+    return unique[np.argmax(counts)] if len(unique) > 0 else -9999
 
 # ----------------
 
-# # List the shapefiles in GB:
-shapefile_path = os.path.join(root, 'Land Use Inputs/Reclassified shapefiles')
-# shapefiles = os.listdir(shapefile_path)
-# shapefiles = [os.path.join(shapefile_path, sf) for sf in shapefiles if sf.endswith('.shp')]
-#
-# # Merge into a single file:
-# gdfs = []
-# for shapefile in shapefiles:
-#     print(shapefile)
-#     sf = gpd.read_file(shapefile)
-#     sf = sf.to_crs(epsg=27700)
-#
-#     gdfs.append(gpd.read_file(shapefile))
-#
-# # Merge all GeoDataFrames into one
-# merged_gdf = gpd.GeoDataFrame(pd.concat(gdfs, ignore_index=True))
-#
-# # Save the merged GeoDataFrame to a new shapefile
-# merged_gdf.to_file(shapefile_path + '/Land_Use_GN_UK.shp')
+# Reclassification mapping
+reclass_mapping = {0: -9999,
+    1: 4, 2: 5, 3: 1, 4: 3, 5: 3, 6: 3, 7: 3, 8: 3, 9: 6,
+    10: 6, 11: 6, 12: 6, 13: 6, 14: 2, 15: 2, 16: 2,
+    17: 2, 18: 2, 19: 2, 20: 2, 21: 2, 22: 7, 23: 7
+}
 
-# ----------------
+# Paths for your rasters
+raster_GB_LCM = root + "/Land Use Inputs/LCM 2007 25m Raster/data/lcm2007gb25m.tif"
+raster_NI_LCM = root + "/Land Use Inputs/LCM 2007 25m Raster/data/LCM2007_NI_25M_BNG.tif"
 
-# # Define parameters for the raster
-# extent = (0, 0, 661000, 1241000)  # (minX, minY, maxX, maxY) in British National Grid (EPSG:27700)
-# crs = "EPSG:27700"  # British National Grid CRS
-#
-# # Load the vector data (merged shapefile)
-# shapefile = gpd.read_file(shapefile_path + '/Land_Use_GN_UK.shp')
-#
-# # Create raster dimensions based on the extent and resolution
-# width = int((extent[2] - extent[0]) / resolution_output)
-# height = int((extent[3] - extent[1]) / resolution_output)
-#
-# # Create an empty raster
-# transform = rasterio.transform.from_bounds(*extent, width, height)
-# raster_data = np.zeros((height, width), dtype=rasterio.uint8)
-#
-# # Rasterize the vector data
-# rasterized = rasterio.features.rasterize(
-#     ((geom, value) for geom, value in zip(shapefile.geometry, shapefile['SHETRAN'])),
-#     out_shape=raster_data.shape,
-#     transform=transform,
-#     fill=-9999,  # Background value
-#     dtype=rasterio.uint8
-# )
-#
-# # Save the rasterized data to a GeoTIFF file
-# with rasterio.open(
-#     f'{shapefile_path}/Land Use {resolution_output}m.asc',
-#     "w",
-#     driver="AAIGrid",
-#     height=height,
-#     width=width,
-#     count=1,
-#     dtype=rasterized.dtype,
-#     crs=crs,
-#     transform=transform,
-# ) as dst:
-#     dst.write(rasterized, 1)
+# Open LCM GB
+print('READING')
+rasters = [rasterio.open(f) for f in [raster_GB_LCM, raster_NI_LCM]]
 
-# ----------------
+# Merge the rasters into a single UK raster:
+merged_raster, merged_transform = merge(rasters)  # , nodata=-9999
 
-# extent = (0, 0, 661000, 1241000)  # (minX, minY, maxX, maxY) in British National Grid (EPSG:27700)
-# crs = "EPSG:27700"  # British National Grid CRS
+# Reclassify from the LCM classes the SHETRAN classes:
+print('RECLASSIFYING')
+reclassified_data = np.empty(merged_raster.shape)  # np.copy(merged_raster)
 
-# Load the vector data (merged shapefile)
-gdf = gpd.read_file(shapefile_path + '/LCM_2007_vector_UK_BNG.shp')
+for original_value, new_value in reclass_mapping.items():
+    reclassified_data[merged_raster == original_value] = new_value
 
-# Step 2: Create a vector grid
-xmin, ymin, xmax, ymax = 0, 0, 661000, 1241000  # British National Grid boundaries
-cell_size = resolution_output  # 100m resolution
-cols = np.arange(xmin, xmax, cell_size)
-rows = np.arange(ymin, ymax, cell_size)
+# Change -9999s into nan values so that they do not influence processing:
+reclassified_data[reclassified_data == -9999] = np.nan
 
-grid_cells = []
-for x in cols:
-    for y in rows:
-        grid_cells.append(box(x, y, x + cell_size, y + cell_size))
+# Regrid to desired resolution:
+print('REGRIDDING')
+xmin, ymin, xmax, ymax = 0, 0, 661000, 1241000
+new_transform = from_bounds(xmin, ymin, xmax, ymax,
+                            width=(xmax - xmin) // resolution_output,
+                            height=(ymax - ymin) // resolution_output)
 
-# Turn this into a geodataframe and give it an ID
-grid = gpd.GeoDataFrame({"geometry": grid_cells}, crs=gdf.crs)
-grid['ID'] = np.arange(0, grid.shape[0])
+new_shape = ((ymax - ymin) // resolution_output, (xmax - xmin) // resolution_output)
+resampled_raster = np.empty(new_shape)
 
-# Step 1: Intersect the grid and the shapefile
-intersected = gpd.overlay(grid, gdf, how='intersection', keep_geom_type=False)
-
-# Step 2: Calculate the area of each intersected polygon
-intersected["area"] = intersected.area
-
-# Step 3: Sort the intersected DataFrame by 'ID' and 'area' and crop to only the largest land type per cell:
-intersected_sorted = intersected.sort_values(by=["ID", "area"], ascending=[True, False])
-
-# Step 4: Drop duplicates based on 'ID', keeping only the largest area
-filtered_intersected = intersected_sorted.drop_duplicates(subset="ID")
-# filtered_intersected.to_file(shapefile_path + '/filtered_intersected.shp')
-
-# 5. Converting filtered_intersected straight to raster misses cells, instead join the LC classes back to the grid:
-# Perform the left join on the 'ID' column
-grid_with_intersected = grid.merge(filtered_intersected[['SHETRAN', 'ID']], on="ID", how="left", suffixes=('_grid', '_intersected'))
-# grid_with_intersected.to_file(shapefile_path + '/grid_with_intersected.shp')
-
-# Step 6: Rasterize the intersected polygons
-# Define the raster properties
-transform = rasterio.transform.from_bounds(xmin, ymin, xmax, ymax, len(cols), len(rows))
-
-# Prepare shapes and values for rasterisation:
-shapes = ((geom, value) for geom, value in zip(grid_with_intersected.geometry, grid_with_intersected['SHETRAN']))
-
-# Rasterize:
-raster = rasterio.features.rasterize(
-    shapes,
-    out_shape=(len(rows), len(cols)),
-    transform=transform,
-    fill=-9999,  # NoData value
-    dtype="int32"
+reproject(  # You could also do this by applying the row_difference and cell_reduce method from the DEM.
+    source=reclassified_data,
+    destination=resampled_raster,
+    src_transform=merged_transform,
+    src_crs="EPSG:27700",
+    dst_transform=new_transform,
+    dst_crs="EPSG:27700",
+    resampling=Resampling.mode  # Use the mode to get the value that is most common
 )
 
-# Convert 0s to -9999s for no data values:
-raster[raster == 0] = -9999
+# Change np.nan's back into -9999s:
+resampled_raster[np.isnan(resampled_raster)] = -9999
 
-write_ascii(
-    array=raster,
-    ascii_ouput_path=f'{root}/Processed Data/CEH_LCM_2007 {resolution_output}m.asc',
-    xllcorner=xmin,
-    yllcorner=ymin,
-    cellsize=cell_size,
-    NODATA_value=-9999,
-    data_format='%1.0f'
-)
+# Write as an asc file:
+output_path = f'{root}/Processed Data/UK Land Use {resolution_output}m'
+
+# Save to file
+with rasterio.open(
+        output_path+'.asc', "w", driver="AAIGrid",
+        height=resampled_raster.shape[0], width=resampled_raster.shape[1],
+        count=1, dtype=resampled_raster.dtype, crs="EPSG:27700",
+        transform=new_transform, nodata=-9999
+) as dst:
+    dst.write(resampled_raster, 1)
+
 
 # ----------------
 
