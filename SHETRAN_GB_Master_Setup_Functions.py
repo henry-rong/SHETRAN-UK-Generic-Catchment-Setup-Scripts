@@ -519,7 +519,7 @@ def create_climate_files(climate_startime, climate_endtime, mask_path, catch, cl
     end_year, _, _ = get_date_components(climate_endtime)
 
     # Read catchment mask
-    mask, ncols, nrows, xll, yll, cellsize, _, hdrs = read_ascii_raster(
+    mask, ncols, nrows, xll, yll, cellsize, _, hdrs, _ = read_ascii_raster(
         mask_path, data_type=int, return_metadata=True
     )
 
@@ -607,7 +607,7 @@ def process_catchment(
     try:
         # Read mask
         print(catch, ": reading mask...")
-        mask, ncols, nrows, xll, yll, cellsize, _, headers = read_ascii_raster(
+        mask, ncols, nrows, xll, yll, cellsize, _, headers, _ = read_ascii_raster(
             mask_path, data_type=int, return_metadata=True)
 
         # Create static maps and return vegetation_array (land cover) and soil arrays/info
@@ -707,7 +707,7 @@ def read_static_asc_csv(static_input_folder,
         raise ValueError("Multiple NFM maps are 'True' in setup script; only a single map can be used.")
 
     # Load in the coordinate data (assumes all data has same coordinates:
-    _, ncols, nrows, xll, yll, cellsize, _, _ = read_ascii_raster(static_input_folder + "SHETRAN_UK_DEM.asc",
+    _, ncols, nrows, xll, yll, cellsize, _, _, _ = read_ascii_raster(static_input_folder + "SHETRAN_UK_DEM.asc",
                                                                   return_metadata=True)
 
     # Create eastings and northings. Note, the northings are reversed to match the maps

@@ -105,7 +105,7 @@ end_time = '2011-01-01'
 # resolution = resolution_string(resolution)
 
 # Static Input Data Folder:
-raw_input_folder = "I:/SHETRAN_GB_2021/02_Input_Data/Raw ASCII inputs for SHETRAN UK/1000m/"
+raw_input_folder = "I:/SHETRAN_GB_2021/02_Input_Data/Raw ASCII inputs for SHETRAN UK/500m/"
 
 
 # --- Set Processing Methods -----------------------------------
@@ -115,7 +115,7 @@ process_single_catchment = dict(
     simulation_name='7006',
     mask_path="I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/7006_Mask.txt",
     # mask_path="S:/00 - Catchment Setups/Testing setup/7006.txt",
-    output_folder="S:/00 - Catchment Setups/Testing setup/")
+    output_folder="S:/00 - Catchment Setups/Testing setup_500m/")
 
 # Choose Single / Multiprocessing:
 multiprocessing = dict(
