@@ -4,14 +4,13 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="c2cb2013-10b6-48fd-9aaf-b4eeaea1d45f" name="Changes" comment="Improvements made to the raster creation code. This will now process DEM data correctly. Main potential improvement would be to fill holes in the NI DEM around lakes. This is doable with the code in the markdown.">
+    <list default="true" id="c2cb2013-10b6-48fd-9aaf-b4eeaea1d45f" name="Changes" comment="Created a new, tested method for accessing climate data. Committing before reformatting this into a function.">
       <change afterPath="$PROJECT_DIR$/Code Testing Notebook.ipynb" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Data processin exedcution script.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Reduce netCDF File Sizes.py" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/Testing Climate Loop.ipynb" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/test - read_met_data.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Create SHETRAN Raster Data.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/Create SHETRAN Raster Data.ipynb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Data processin exedcution script.py" beforeDir="false" afterPath="$PROJECT_DIR$/Data processin exedcution script.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/SHETRAN_GB_Master_Setup.py" beforeDir="false" afterPath="$PROJECT_DIR$/SHETRAN_GB_Master_Setup.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/SHETRAN_GB_Master_Setup_Functions.py" beforeDir="false" afterPath="$PROJECT_DIR$/SHETRAN_GB_Master_Setup_Functions.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Simulation_Setup_List.csv" beforeDir="false" afterPath="$PROJECT_DIR$/Simulation_Setup_List.csv" afterDir="false" />
@@ -40,6 +39,13 @@
       </map>
     </option>
   </component>
+  <component name="Git.Pull.Settings">
+    <option name="OPTIONS">
+      <set>
+        <option value="REBASE" />
+      </set>
+    </option>
+  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
@@ -57,31 +63,33 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "RunOnceActivity.OpenProjectViewOnStart": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "WebServerToolWindowFactoryState": "false",
-    "last_opened_file_path": "I:/SHETRAN_GB_2021/01_Scripts/Other/OFFLINE Generic Catchment Setup Script/Shetran_setup_20230816h.py",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "MTConfigurable",
-    "two.files.diff.last.used.file": "I:/SHETRAN_GB_2021/01_Scripts/Other/OFFLINE Generic Catchment Setup Script/Shetran_setup_20230816h.py",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;WebServerToolWindowFactoryState&quot;: &quot;false&quot;,
+    &quot;last_opened_file_path&quot;: &quot;I:/SHETRAN_GB_2021/01_Scripts/Other/OFFLINE Generic Catchment Setup Script/Shetran_setupFn_20230816g.py&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;,
+    &quot;two.files.diff.last.used.file&quot;: &quot;I:/SHETRAN_GB_2021/01_Scripts/Other/OFFLINE Generic Catchment Setup Script/Shetran_setupFn_20230816g.py&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   },
-  "keyToStringList": {
-    "com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File": [
-      "Jupyter"
+  &quot;keyToStringList&quot;: {
+    &quot;com.intellij.ide.scratch.ScratchImplUtil$2/New Scratch File&quot;: [
+      &quot;Jupyter&quot;
     ]
   }
-}]]></component>
+}</component>
   <component name="PyConsoleOptionsProvider">
     <option name="myPythonConsoleState">
-      <console-settings>
+      <console-settings module-name="SHETRAN_generic_catchment_setup" is-module-sdk="true">
         <option name="useSoftWraps" value="true" />
+        <option name="myUseModuleSdk" value="true" />
+        <option name="myModuleName" value="SHETRAN_generic_catchment_setup" />
       </console-settings>
     </option>
   </component>
@@ -117,9 +125,6 @@
       <module name="SHETRAN_generic_catchment_setup" />
       <option name="INTERPRETER_OPTIONS" value="" />
       <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
       <option name="SDK_HOME" value="" />
       <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
       <option name="IS_MODULE_SDK" value="true" />
@@ -252,7 +257,16 @@
       <workItem from="1734087464932" duration="2718000" />
       <workItem from="1734103151450" duration="6836000" />
       <workItem from="1734344693380" duration="15987000" />
-      <workItem from="1734366659859" duration="36163000" />
+      <workItem from="1734366659859" duration="38448000" />
+      <workItem from="1734546695198" duration="4597000" />
+      <workItem from="1734608324138" duration="20487000" />
+      <workItem from="1734686736343" duration="25803000" />
+      <workItem from="1736155385621" duration="9796000" />
+      <workItem from="1736173949450" duration="17096000" />
+      <workItem from="1736246096660" duration="761000" />
+      <workItem from="1736247148645" duration="14825000" />
+      <workItem from="1736267549687" duration="8330000" />
+      <workItem from="1736281876115" duration="16730000" />
     </task>
     <task id="LOCAL-00001" summary="Initial Commit! Working files for generic SHETRAN catchment setup.&#10;Post Simulation Functions not yet well-developed.">
       <created>1660834558228</created>
@@ -347,7 +361,87 @@
       <option name="project" value="LOCAL" />
       <updated>1734453574315</updated>
     </task>
-    <option name="localTasksCounter" value="14" />
+    <task id="LOCAL-00014" summary="Updates to the DEM creator - NI is now included and there are improvements to how missing values are handled.&#10;&#10;Land use processing code has been started.">
+      <option name="closed" value="true" />
+      <created>1734544100920</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1734544100920</updated>
+    </task>
+    <task id="LOCAL-00015" summary="Updates to the DEM creator - NI is now included and there are improvements to how missing values are handled.&#10;&#10;Land use processing code has been started.&#10;&#10;I just tried to push previous commits and had forgotten to pull other changes and so it all went to sh1t. I think it is fixed, but be aware.">
+      <option name="closed" value="true" />
+      <created>1734547213392</created>
+      <option name="number" value="00015" />
+      <option name="presentableId" value="LOCAL-00015" />
+      <option name="project" value="LOCAL" />
+      <updated>1734547213392</updated>
+    </task>
+    <task id="LOCAL-00016" summary="Committing the README and Master Setup after the git commit/pull/rebase debarcle. I think these are correct again.">
+      <option name="closed" value="true" />
+      <created>1734547520668</created>
+      <option name="number" value="00016" />
+      <option name="presentableId" value="LOCAL-00016" />
+      <option name="project" value="LOCAL" />
+      <updated>1734547520668</updated>
+    </task>
+    <task id="LOCAL-00017" summary="Code for building land cover maps added and checked.">
+      <option name="closed" value="true" />
+      <created>1734635264050</created>
+      <option name="number" value="00017" />
+      <option name="presentableId" value="LOCAL-00017" />
+      <option name="project" value="LOCAL" />
+      <updated>1734635264050</updated>
+    </task>
+    <task id="LOCAL-00018" summary="Total rewrite of the Land cover map processing. Using vectors took a very long time and did not complete overnight on the blades. Instead, the 25m rasters are used. These provide 'better' results than the original SHETRAN UK land use grid that better match the vectors.">
+      <option name="closed" value="true" />
+      <created>1734718063340</created>
+      <option name="number" value="00018" />
+      <option name="presentableId" value="LOCAL-00018" />
+      <option name="project" value="LOCAL" />
+      <updated>1734718063340</updated>
+    </task>
+    <task id="LOCAL-00019" summary="Code for building lake map and vegetation details added.">
+      <option name="closed" value="true" />
+      <created>1736179938229</created>
+      <option name="number" value="00019" />
+      <option name="presentableId" value="LOCAL-00019" />
+      <option name="project" value="LOCAL" />
+      <updated>1736179938230</updated>
+    </task>
+    <task id="LOCAL-00020" summary="Fixed bug in DEM creation - columns/rows were not being added in the resizing step as these were the wrong way around.">
+      <option name="closed" value="true" />
+      <created>1736184540621</created>
+      <option name="number" value="00020" />
+      <option name="presentableId" value="LOCAL-00020" />
+      <option name="project" value="LOCAL" />
+      <updated>1736184540621</updated>
+    </task>
+    <task id="LOCAL-00021" summary="Changed the Lake threshold to 0.25 as this was preferred value following testing against actual lake sizes.">
+      <option name="closed" value="true" />
+      <created>1736188711648</created>
+      <option name="number" value="00021" />
+      <option name="presentableId" value="LOCAL-00021" />
+      <option name="project" value="LOCAL" />
+      <updated>1736188711648</updated>
+    </task>
+    <task id="LOCAL-00022" summary="Creation of YML file for copying conda environment.">
+      <option name="closed" value="true" />
+      <created>1736267230218</created>
+      <option name="number" value="00022" />
+      <option name="presentableId" value="LOCAL-00022" />
+      <option name="project" value="LOCAL" />
+      <updated>1736267230218</updated>
+    </task>
+    <task id="LOCAL-00023" summary="Created a new, tested method for accessing climate data. Committing before reformatting this into a function.">
+      <option name="closed" value="true" />
+      <created>1736335958388</created>
+      <option name="number" value="00023" />
+      <option name="presentableId" value="LOCAL-00023" />
+      <option name="project" value="LOCAL" />
+      <updated>1736335958388</updated>
+    </task>
+    <option name="localTasksCounter" value="24" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -389,7 +483,17 @@
     <MESSAGE value="Code version used to create UDM baseline simulations." />
     <MESSAGE value="Notebook made for the creation of SHETRAN raster data. This has been done manually or in GIS programs in the past. This involves some minor updates to functions." />
     <MESSAGE value="Improvements made to the raster creation code. This will now process DEM data correctly. Main potential improvement would be to fill holes in the NI DEM around lakes. This is doable with the code in the markdown." />
-    <option name="LAST_COMMIT_MESSAGE" value="Improvements made to the raster creation code. This will now process DEM data correctly. Main potential improvement would be to fill holes in the NI DEM around lakes. This is doable with the code in the markdown." />
+    <MESSAGE value="Updates to the DEM creator - NI is now included and there are improvements to how missing values are handled.&#10;&#10;Land use processing code has been started." />
+    <MESSAGE value="Updates to the DEM creator - NI is now included and there are improvements to how missing values are handled.&#10;&#10;Land use processing code has been started.&#10;&#10;I just tried to push previous commits and had forgotten to pull other changes and so it all went to sh1t. I think it is fixed, but be aware." />
+    <MESSAGE value="Committing the README and Master Setup after the git commit/pull/rebase debarcle. I think these are correct again." />
+    <MESSAGE value="Code for building land cover maps added and checked." />
+    <MESSAGE value="Total rewrite of the Land cover map processing. Using vectors took a very long time and did not complete overnight on the blades. Instead, the 25m rasters are used. These provide 'better' results than the original SHETRAN UK land use grid that better match the vectors." />
+    <MESSAGE value="Code for building lake map and vegetation details added." />
+    <MESSAGE value="Fixed bug in DEM creation - columns/rows were not being added in the resizing step as these were the wrong way around." />
+    <MESSAGE value="Changed the Lake threshold to 0.25 as this was preferred value following testing against actual lake sizes." />
+    <MESSAGE value="Creation of YML file for copying conda environment." />
+    <MESSAGE value="Created a new, tested method for accessing climate data. Committing before reformatting this into a function." />
+    <option name="LAST_COMMIT_MESSAGE" value="Created a new, tested method for accessing climate data. Committing before reformatting this into a function." />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/generic_catchment_setup$main.coverage" NAME="main Coverage Results" MODIFIED="1658938046709" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />

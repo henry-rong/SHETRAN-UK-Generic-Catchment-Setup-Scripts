@@ -134,25 +134,25 @@ rainfall_input_folder = 'I:/CEH-GEAR downloads/'
 temperature_input_folder = 'I:/CHESS_T/'
 PET_input_folder = 'I:/CHESS/'
 
-# Set Model period: 'yyyy-mm-dd'
+# Set Model periods (model will include given days): 'yyyy-mm-dd'
 start_time = '1980-01-01'
-end_time = '1981-01-01'
+end_time = '2010-12-31'
 
 # # Model Resolution:
 # resolution = 1000  # [Cell size in meters - options are: 1000, 500, 100]
 # resolution = resolution_string(resolution)
 
 # Static Input Data Folder:
-raw_input_folder = "I:/SHETRAN_GB_2021/02_Input_Data/Raw ASCII inputs for SHETRAN UK/200m/"
+raw_input_folder = "I:/SHETRAN_GB_2021/02_Input_Data/Raw ASCII inputs for SHETRAN UK/1000m/"
 
 # --- Set Processing Methods -----------------------------------
 # PYRAMID = 'C:/Users/nbs65/Newcastle University/PYRAMID - General/WP3/02 SHETRAN Simulations/'
 process_single_catchment = dict(
     single=True,
-    simulation_name='7006',
+    simulation_name='33029',
     # mask_path="I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/7006_Mask.txt",
-    mask_path="S:/00 - Catchment Setups/Steve Birkinshaw/7006_Mask_500m.txt",
-    output_folder="S:/00 - Catchment Setups/Steve Birkinshaw/7006_500m_test/")
+    mask_path="S:/00 - Catchment Setups/Steve Birkinshaw/33029_Mask_1000m.txt",
+    output_folder="S:/00 - Catchment Setups/Steve Birkinshaw/33029_1000m/")
 
 
 # Choose Single / Multiprocessing:

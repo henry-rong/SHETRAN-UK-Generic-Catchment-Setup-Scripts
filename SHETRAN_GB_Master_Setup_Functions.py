@@ -23,6 +23,7 @@ import copy
 import datetime
 import multiprocessing as mp
 import numpy as np
+import rasterio
 
 
 # --- Create Functions ----------------------------------------
@@ -389,7 +390,7 @@ def find_rainfall_files(year_from, year_to):
     return x
 
 
-def find_temperature_or_PET_files(folder_path, year_from, year_to):
+def find_CHESS_temperature_or_PET_files(folder_path, year_from, year_to):
     files = sorted(os.listdir(folder_path))
     x = []
     for fn in files:
@@ -597,7 +598,7 @@ def create_climate_files(climate_startime, climate_endtime, mask_path, catch, cl
 
     # Make temperature time series
     print("-------- Processing temperature data.")
-    tas_input_files = find_temperature_or_PET_files(tas_folder, start_year, end_year)
+    tas_input_files = find_CHESS_temperature_or_PET_files(tas_folder, start_year, end_year)
     series_output_path = climate_output_folder + catch + '_Temp.csv'
     if not os.path.exists(series_output_path):
         make_series(
@@ -612,7 +613,7 @@ def create_climate_files(climate_startime, climate_endtime, mask_path, catch, cl
     print("-------- Processing evapotranspiration data.")
 
     # Make PET time series
-    pet_input_files = find_temperature_or_PET_files(pet_folder, start_year, end_year)
+    pet_input_files = find_CHESS_temperature_or_PET_files(pet_folder, start_year, end_year)
     series_output_path = climate_output_folder + catch + '_PET.csv'
     if not os.path.exists(series_output_path):
         make_series(
@@ -622,6 +623,187 @@ def create_climate_files(climate_startime, climate_endtime, mask_path, catch, cl
             series_startime=climate_startime, series_endtime=climate_endtime,
             cat_coords=cat_coords_centroid, cell_ids=cell_ids, series_output_path=series_output_path
         )
+
+def load_and_crop_xarray(filepath, mask):
+    # Load the dataset
+    ds = xr.open_dataset(filepath)
+
+    # Get the bounding box from the mask
+    mask_bounds = {  # We are adding a buffer just to be safe, this seems to help!
+        "x_min": mask.x.min().item()-1000,
+        "x_max": mask.x.max().item()+1000,
+        "y_min": mask.y.min().item()-1000,
+        "y_max": mask.y.max().item()+1000,
+    }
+
+    # Crop the dataset to the mask's bounding box. Do this according to which way y axis is ordered (differs for different datasets).
+    y_coords = ds.y.values
+    if (y_coords[1] - y_coords[0]) > 0:
+        cropped_ds = ds.sel(
+            # Cropping with .sel() may load the full dataset if it is too large. If this is a concern, consider using rioxarray for better I/O efficiency.
+            x=slice(mask_bounds["x_min"], mask_bounds["x_max"]),
+            y=slice(mask_bounds["y_min"], mask_bounds["y_max"]),
+        )
+        # print("y-coordinates are increasing.")
+    else:
+        cropped_ds = ds.sel(
+            x=slice(mask_bounds["x_min"], mask_bounds["x_max"]),
+            y=slice(mask_bounds["y_max"], mask_bounds["y_min"]),
+        )
+        # print("y-coordinates are decreasing.")
+
+    return cropped_ds
+
+def build_climate_data_with_xarray(cells_map_filepath, netCDF_filepath_list, h5_variable_name,
+                                   start_date, end_date, climate_csv_output_filepath):
+    """
+
+    :param cells_map_filepath: filepath to a Cells ascii file.
+    :param netCDF_filepath_list: Must be a list of full filepaths.
+    :param h5_variable_name: 'pet' (CHESS), 'tas' (CHESS), rainfall_amount (GEAR).
+    :param climate_csv_output_filepath:
+    :return:
+    """
+
+    # Load the ASCII raster of cell numbers
+    with rasterio.open(cells_map_filepath) as src:
+        mask_data = src.read(1)  # Read the first (and likely only) band
+        mask_transform = src.transform
+
+    # Create coordinate arrays:
+    mask_height, mask_width = mask_data.shape
+    mask_x = np.arange(mask_width) * mask_transform[0] + mask_transform[2]
+    mask_y = np.arange(mask_height) * mask_transform[4] + mask_transform[5]
+
+    # The mask works best if it uses centroids, but this may change depending on the data source!
+    # TODO: This is for further consideration / checks, but works well so far.
+    mask_x = mask_x + mask_transform[0] / 2
+    mask_y = mask_y - mask_transform[0] / 2
+
+    # Build the mask into an xarray:
+    mask = xr.DataArray(
+        mask_data,
+        coords={"y": mask_y, "x": mask_x},
+        dims=["y", "x"],
+        name="mask",
+    )
+
+    # Load the climate data:
+    print('------------ Reading datasets...')
+    datasets = [load_and_crop_xarray(fp, mask) for fp in netCDF_filepath_list]
+    print('------------ Formatting arrays...')
+
+    # Stack these into a single xarray ordered by time variable:
+    stacked_ds = xr.concat(datasets, dim="time")
+
+    # Crop the data to the desired time period:
+    ds_cropped = stacked_ds.sel(time=slice(start_date, end_date))
+
+    # Interpolate the stacked dataset to the mask's grid resolution.
+    # This will take the nearest cell if the mask cell crosses multiple climate cells.
+    # TODO: You may wish to change this to linear interpolation (or similar). This tends to prioritise the lower left value.
+    stacked_resampled = ds_cropped.interp(
+        x=mask.x,
+        y=mask.y,
+        method="nearest"  # Or 'linear' for smoother interpolation
+    )
+
+    # -- Now begin to process the data into csv format.
+
+    # Flatten the mask and rainfall data:
+    mask_flat = mask.values.flatten()  # Convert mask to a 1D array
+    climate_flattened = stacked_resampled[h5_variable_name].values.reshape(stacked_resampled.sizes["time"],
+                                                                           -1)  # Reshape rainfall to [time, all grid cells]
+
+    # Get indices of active cells:
+    active_indices = mask_flat > 0
+
+    # Filter active cells from rainfall data:
+    climate_active_cells = climate_flattened[:, active_indices]
+
+    # Create column names based on the mask indices:
+    column_names = [int(idx) for idx in mask_flat[active_indices]]
+
+    # Create the DataFrame that will be the csv:
+    climate_df = pd.DataFrame(climate_active_cells, columns=column_names)
+
+    # If using temperature, change from Kelvin to degrees:
+    if h5_variable_name == 'tas':
+        climate_df -= 273.15
+
+    # Round the data to 1 decimal place
+    climate_df = climate_df.round(1)
+
+    # Add the time column:
+    climate_df.insert(len(climate_df.columns), "Time", stacked_resampled["time"].values)
+
+    # Save to CSV:
+    climate_df.to_csv(climate_csv_output_filepath, index=False)
+
+
+def run_build_climate_data_with_xarray(mask_filepath, climate_output_folder, catchment, climate_startime, climate_endtime,
+                                       prcp_folder, tas_folder, pet_folder):
+    """
+    This will run the function for building climate csv's and the cell map.
+    The tas and pet files are located, the rainfall files are built from scratch as their names are easy. This doesn't havet o be the case and could be changed.
+    :param climate_output_folder:
+    :param catchment:
+    :param climate_startime:
+    :param climate_endtime:
+    :param prcp_folder:
+    :param tas_folder:
+    :param pet_folder:
+    :return:
+    """
+
+    # Create the cell map:
+    map_output_path = climate_output_folder + catchment + '_Cells.asc'
+    make_cell_map(mask_filepath, map_output_path)
+
+    # Get the start years (used for making rainfall filenames and selecting climate files):
+    start_year, _, _ = get_date_components(climate_startime)
+    end_year, _, _ = get_date_components(climate_endtime)
+
+    print("-------- Processing rainfall data.")
+    prcp_input_file_names = find_rainfall_files(start_year, end_year)
+    prcp_input_files = [os.path.join(prcp_folder, file) for file in prcp_input_file_names]
+    series_output_path = climate_output_folder + catchment + '_Precip.csv'
+
+    # if not os.path.exists(series_output_path):
+    build_climate_data_with_xarray(
+        cells_map_filepath=map_output_path,
+        netCDF_filepath_list=prcp_input_files,
+        h5_variable_name='rainfall_amount',
+        start_date=climate_startime, end_date=climate_endtime,
+        climate_csv_output_filepath=series_output_path)
+
+    # Make temperature time series
+    print("-------- Processing temperature data.")
+    tas_input_filenames = find_CHESS_temperature_or_PET_files(tas_folder, start_year, end_year)
+    tas_input_files = [os.path.join(tas_folder, file) for file in tas_input_filenames]
+    series_output_path = climate_output_folder + catchment + '_Temp.csv'
+
+    # if not os.path.exists(series_output_path):
+    build_climate_data_with_xarray(
+        cells_map_filepath=map_output_path,
+        netCDF_filepath_list=tas_input_files,
+        h5_variable_name='tas',
+        start_date=climate_startime, end_date=climate_endtime,
+        climate_csv_output_filepath=series_output_path)
+
+    # --- PET
+    print("-------- Processing evapotranspiration data.")
+    # Make PET time series
+    pet_input_filenames = find_CHESS_temperature_or_PET_files(pet_folder, start_year, end_year)
+    pet_input_files = [os.path.join(pet_folder, file) for file in pet_input_filenames]
+    series_output_path = climate_output_folder + catchment + '_PET.csv'
+    # if not os.path.exists(series_output_path):
+    build_climate_data_with_xarray(
+        cells_map_filepath=map_output_path,
+        netCDF_filepath_list=pet_input_files,
+        h5_variable_name='pet',
+        start_date=climate_startime, end_date=climate_endtime,
+        climate_csv_output_filepath=series_output_path)
 
 
 def process_catchment(
@@ -647,12 +829,6 @@ def process_catchment(
         vegetation_array, soil_array, orig_soil_types, new_soil_types = create_static_maps(
             static_inputs, xll, yll, ncols, nrows, cellsize, output_subfolder, headers, catch, mask)
 
-        # Create climate time series files (and cell ID map)
-        if produce_climate:
-            print(catch, ": Creating climate files...")
-            create_climate_files(simulation_startime, simulation_endtime, mask_path, catch, output_subfolder,
-                                 prcp_data_folder, tas_data_folder, pet_data_folder)
-
         # Get strings of vegetation and soil properties/details for library file
         # print(catch, ": creating vegetation (land use) and soil strings...")
         veg_string = get_veg_string(vegetation_array, static_inputs)
@@ -662,6 +838,23 @@ def process_catchment(
         # print(catch, ": creating library file...")
         create_library_file(output_subfolder, catch, veg_string, soil_types_string, soil_cols_string,
                             simulation_startime, simulation_endtime)
+
+        # Create climate time series files (and cell ID map)
+        if produce_climate:
+            print(catch, ": Creating climate files...")
+            # create_climate_files(simulation_startime, simulation_endtime, mask_path, catch, output_subfolder,
+            # prcp_data_folder, tas_data_folder, pet_data_folder)  # ^^ This method does not work well for catchments
+            # with resolutions != 1000m. run_build_climate_data_with_xarray is preferred.
+
+            run_build_climate_data_with_xarray(
+                mask_filepath=mask_path,
+                climate_output_folder=output_subfolder,
+                catchment=catch,
+                climate_startime=simulation_startime,
+                climate_endtime=simulation_endtime,
+                prcp_folder=prcp_data_folder,
+                tas_folder=tas_data_folder,
+                pet_folder=pet_data_folder)
 
         # sys.exit()
 
@@ -804,4 +997,18 @@ def resolution_string(res):
               f'1000, 500, or 100 .')
     else:
         return f'{str(res)}/'
+
+def make_cell_map(mask_filepath, output_filepath=None, write=True):
+    """
+    This will build the Cells.txt file from a mask.
+    :param mask_filepath:
+    :param output_filepath:
+    :param write: True or False
+    :return:
+    """
+    m, _, _, x, y, cs, _, _, d = read_ascii_raster(mask_filepath, data_type=int, return_metadata=True)
+    m[m == 0] = np.arange(1, len(m[m == 0]) + 1)
+    if write:
+        write_ascii(m, output_filepath, x, y, cs, data_format='%1.0f')
+    return m, d
 

@@ -808,7 +808,7 @@ def resolution_string(res):
         return f'{str(res)}/'
 
 
-def load_and_crop(filepath, mask):
+def load_and_crop_xarray(filepath, mask):
     # Load the dataset
     ds = xr.open_dataset(filepath)
 
@@ -846,89 +846,151 @@ def make_cell_map(mask_filepath, output_filepath=None, write=True):
     return m, d
 
 # 0. Preamble:
-h5_variable_name = 'pet' # 'rainfall_amount'  # 'tas'  # 'pet'
+# h5_variable_name = 'pet' # 'rainfall_amount'  # 'tas'  # 'pet'
 make_cell_map("S:/00 - Catchment Setups/Steve Birkinshaw/7006_Mask_200m.txt",
               "S:/00 - Catchment Setups/Steve Birkinshaw/7006_Mask_200m_CELLS.txt")
 
-# Load the ASCII raster mask
-with rasterio.open("S:/00 - Catchment Setups/Steve Birkinshaw/7006_Mask_200m_CELLS.txt") as src:
-    mask_data = src.read(1)  # Read the first (and likely only) band
-    mask_transform = src.transform
+# cells_map_filepath = "S:/00 - Catchment Setups/Steve Birkinshaw/7006_Mask_200m_CELLS.txt"
+# netCDF_filepath_list = ['I:/CHESS/chess_pet_wwg_198001.nc', 'I:/CHESS/chess_pet_wwg_198002.nc']
+# netCDF_filepath_list = ['I:/CHESS_T/chess-met_tas_gb_1km_daily_19800101-19800131.nc', 'I:/CHESS_T/chess-met_tas_gb_1km_daily_19800201-19800229.nc']
+# netCDF_filepath_list = ['I:/CEH-GEAR downloads/1980.nc']  # , 'I:/CEH-GEAR downloads/1981.nc'
+# f"S:/00 - Catchment Setups/Steve Birkinshaw/TEST_{h5_variable_name}_data.csv"
+def build_climate_data_with_xarray(cells_map_filepath, netCDF_filepath_list, h5_variable_name, climate_csv_output_filepath):
+    """
+    cells_map_filepath: filepath to a Cells ascii file.
+    netCDF_filepath_list: Must be a list of full filepaths.
+    h5_variable_name: 'pet' (CHESS), 'tas' (CHESS), rainfall_amount (GEAR).
+    """
+    # Load the ASCII raster of cell numbers
+    with rasterio.open(cells_map_filepath) as src:
+        mask_data = src.read(1)  # Read the first (and likely only) band
+        mask_transform = src.transform
+    
+    # Create coordinate arrays:
+    mask_height, mask_width = mask_data.shape
+    mask_x = np.arange(mask_width) * mask_transform[0] + mask_transform[2]
+    mask_y = np.arange(mask_height) * mask_transform[4] + mask_transform[5]
+    
+    # The mask works best if it uses centroids, but this may change depending on the data source!
+    # TODO: This is for further consideration / checks, but works well so far.
+    mask_x = mask_x + mask_transform[0]/2
+    mask_y = mask_y - mask_transform[0]/2
+    
+    # Build the mask into an xarray:
+    mask = xr.DataArray(
+        mask_data,
+        coords={"y": mask_y, "x": mask_x},
+        dims=["y", "x"],
+        name="mask",
+    )
+    
+    # Load the climate data:
+    datasets = [load_and_crop_xarray(fp, mask) for fp in netCDF_filepath_list]
+    
+    # Stack these into a single xarray ordered by time variable:
+    stacked_ds = xr.concat(datasets, dim="time")
+    
+    # Interpolate the stacked dataset to the mask's grid resolution.
+    # This will take the nearest cell if the mask cell crosses multiple climate cells.
+    # TODO: You may wish to change this to linear interpolation (or similar). This tends to prioritise the lower left value.
+    stacked_resampled = stacked_ds.interp(
+        x=mask.x,
+        y=mask.y,
+        method="nearest"  # Or 'linear' for smoother interpolation
+    )
+    
+    # -- Now begin to process the data into csv format.
+    
+    # Flatten the mask and rainfall data:
+    mask_flat = mask.values.flatten()  # Convert mask to a 1D array
+    climate_flattened = stacked_resampled[h5_variable_name].values.reshape(stacked_resampled.sizes["time"], -1)  # Reshape rainfall to [time, all grid cells]
+    
+    # Get indices of active cells:
+    active_indices = mask_flat > 0
+    
+    # Filter active cells from rainfall data:
+    climate_active_cells = climate_flattened[:, active_indices]
+    
+    # Create column names based on the mask indices:
+    column_names = [int(idx) for idx in mask_flat[active_indices]]
+    
+    # Create the DataFrame that will be the csv:
+    climate_df = pd.DataFrame(climate_active_cells, columns=column_names)
+    climate_df = climate_df.round(2)
+    
+    # If using temperature, change from Kelvin to degrees:
+    if h5_variable_name == 'tas':
+        climate_df -= 273.15
+    
+    # Add the time column:
+    climate_df.insert(len(climate_df.columns), "Time", stacked_resampled["time"].values)
+    
+    # Save to CSV:
+    climate_df.to_csv(climate_csv_output_filepath, index=False)
 
-# Create coordinate arrays
-mask_height, mask_width = mask_data.shape
-mask_x = np.arange(mask_width) * mask_transform[0] + mask_transform[2]
-mask_y = np.arange(mask_height) * mask_transform[4] + mask_transform[5]
-
-# The mask works best if it uses centroids, but this may change depending on the data source!
-# TODO: This is for further consideration / checks, but works well so far.
-mask_x = mask_x + mask_transform[0]/2
-mask_y = mask_y - mask_transform[0]/2
-
-mask = xr.DataArray(
-    mask_data,
-    coords={"y": mask_y, "x": mask_x},
-    dims=["y", "x"],
-    name="mask",
-)
-
-# mask.plot()
-# plt.title("Mask")
-# plt.show()
-
-# Load the PET data:
-filepaths = ['I:/CHESS/chess_pet_wwg_198001.nc', 'I:/CHESS/chess_pet_wwg_198002.nc']
-# filepaths = ['I:/CHESS_T/chess-met_tas_gb_1km_daily_19800101-19800131.nc', 'I:/CHESS_T/chess-met_tas_gb_1km_daily_19800201-19800229.nc']
-# filepaths = ['I:/CEH-GEAR downloads/1980.nc']  # , 'I:/CEH-GEAR downloads/1981.nc'
-datasets = [load_and_crop(fp, mask) for fp in filepaths]
-
-# Ensure all datasets have the same variables and coordinates
-stacked_ds = xr.concat(datasets, dim="time")
-
-# stacked_ds['pet'][1, :, :].plot()
-# plt.title("stacked_ds")
-# plt.show()
-
-# Interpolate the stacked dataset to the mask's grid.
-# This will take the nearest cell if the mask cell crosses multiple climate cells.
-# TODO: You may wish to change this to linear interpolation (or similar). This tends to prioritise the lower left value.
-stacked_resampled = stacked_ds.interp(
-    x=mask.x,
-    y=mask.y,
-    method="nearest"  # Or 'linear' for smoother interpolation
-)
-# stacked_resampled['pet'][1,:,:].plot()
-# plt.title("pet Data")
-# plt.show()
-
-# Now we want to create the csv:
-
-# Flatten the mask and rainfall data
-mask_flat = mask.values.flatten()  # Convert mask to a 1D array
-rainfall_flat = stacked_resampled[h5_variable_name].values.reshape(stacked_resampled.sizes["time"], -1)  # Reshape rainfall to [time, all grid cells]
-
-# Get indices of active cells:
-active_indices = mask_flat > 0
-
-# Filter active cells from rainfall data:
-rainfall_active = rainfall_flat[:, active_indices]
-
-# Create column names based on the mask indices:
-column_names = [int(idx) for idx in mask_flat[active_indices]]
-
-# Create the DataFrame:
-rainfall_df = pd.DataFrame(rainfall_active, columns=column_names)
-rainfall_df = rainfall_df.round(2)
-
-# If using temperature, change from kelvin to degrees:
-if h5_variable_name == 'tas':
-    rainfall_df -= 273.15
-
-# Add the time column:
-rainfall_df.insert(len(rainfall_df.columns), "Time", stacked_resampled["time"].values)
-
-# Save to CSV:
-rainfall_df.to_csv(f"S:/00 - Catchment Setups/Steve Birkinshaw/TEST_{h5_variable_name}_data.csv", index=False)
+build_climate_data_with_xarray(
+    cells_map_filepath="S:/00 - Catchment Setups/Steve Birkinshaw/7006_Mask_200m_CELLS.txt",
+    netCDF_filepath_list=['I:/CHESS/chess_pet_wwg_198001.nc', 'I:/CHESS/chess_pet_wwg_198002.nc'],
+    h5_variable_name='pet',
+    climate_csv_output_filepath=f"S:/00 - Catchment Setups/Steve Birkinshaw/TEST_test_data.csv")
 
 
-# TODO - check at 1km and 200m, build into a function, add into main script, run for different scenarios.
+
+def run_build_climate_data_with_xarray(mask_filepath, climate_output_folder, catchment, climate_startime, climate_endtime,
+                                       prcp_folder, tas_folder, pet_folder):
+    """
+    This will run the function for building climate csv's and the cell map.
+    The tas and pet files are located, the rainfall files are built from scratch as their names are easy. This doesn't havet o be the case and could be changed.
+    :param climate_output_folder:
+    :param catchment:
+    :param climate_startime:
+    :param climate_endtime:
+    :param prcp_folder:
+    :param tas_folder:
+    :param pet_folder:
+    :return:
+    """
+
+    # Create the cell map:
+    map_output_path = climate_output_folder + catchment + '_Cells.asc'
+    make_cell_map(mask_filepath, cells_map_filepath = map_output_path)
+
+    # Get the start years (used for making rainfall filenames and selecting climate files):
+    start_year, _, _ = get_date_components(climate_startime)
+    end_year, _, _ = get_date_components(climate_endtime)
+
+    print("-------- Processing rainfall data.")
+    prcp_input_file_names = find_rainfall_files(start_year, end_year)
+    prcp_input_files = [os.path.join(prcp_folder, file) for file in prcp_input_file_names]
+    series_output_path = climate_output_folder + catchment + '_Precip.csv'
+
+    if not os.path.exists(series_output_path):
+        build_climate_data_with_xarray(
+            cells_map_filepath=map_output_path,
+            netCDF_filepath_list=prcp_input_files,
+            h5_variable_name='rainfall_amount',
+            climate_csv_output_filepath=series_output_path)
+
+    # Make temperature time series
+    print("-------- Processing temperature data.")
+    tas_input_files = find_temperature_or_PET_files(tas_folder, start_year, end_year)
+    series_output_path = climate_output_folder + catchment + '_Temp.csv'
+
+    if not os.path.exists(series_output_path):
+        build_climate_data_with_xarray(
+            cells_map_filepath=map_output_path,
+            netCDF_filepath_list=tas_input_files,
+            h5_variable_name='tas',
+            climate_csv_output_filepath=series_output_path)
+
+    # --- PET
+    print("-------- Processing evapotranspiration data.")
+    # Make PET time series
+    pet_input_files = find_temperature_or_PET_files(pet_folder, start_year, end_year)
+    series_output_path = climate_output_folder + catchment + '_PET.csv'
+    if not os.path.exists(series_output_path):
+        build_climate_data_with_xarray(
+            cells_map_filepath=map_output_path,
+            netCDF_filepath_list=pet_input_files,
+            h5_variable_name='pet',
+            climate_csv_output_filepath=series_output_path)
