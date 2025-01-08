@@ -435,6 +435,9 @@ def make_series(
     Make and save climate time series for an individual variable.
     """
 
+    if write_cell_id_map:
+        np.savetxt(map_output_path, cell_ids, fmt='%d', header=map_hdrs, comments='')
+
     met_dataset = read_climate_data(root_folder=ms_root_folder, filenames=ms_filenames, variable=ms_variable,
                                     xll=xll, yll=yll, urx=urx, ury=ury)
 
@@ -458,42 +461,68 @@ def make_series(
     # print("-------- Cropping", variable, "data to period.")
     df = dfs.sort_index().loc[series_startime:series_endtime]
     tmp = np.asarray(df.columns[:])
+    # Get a list of all of the coordinates in the climate data:
     all_coords = [(y, x) for _, y, x in tmp]
     cat_indices = []
     ind = 0
 
-    # Find the appropriate climate data for each pair of coordinates, searching nearby if the cell size is less than 1km
+    print(f'Testing: all_Coords = {all_coords}. Length = {len(all_coords)}')
+    print('   ')
+    print(f'Testing: cat_coords = {cat_coords}. Length = {len(cat_coords)}')
+
+    # This loop will take each set of coordinates within the climate grid and check to see whether they are in the
+    # list of cell coordinates within the catchment (cat_coords). If it is, then the cell number will be written to
+    # the list cat_indices. This will result in a list if cell indexes for the climate data that are used to
+    # subset the climate data and add it to the catchment csvs.
+
+    # Run through the climate data, cell by cell:
     for all_pair in all_coords:
         # 1km SHETRAN - these should match nicely.
         if all_pair in cat_coords:
             cat_indices.append(ind)
+            print('1000')
         # 500m SHETRAN
-        elif tuple([list(all_pair)[0]+500, list(all_pair)[1]]) in cat_coords:
+        if tuple([list(all_pair)[0]+500, list(all_pair)[1]]) in cat_coords:
             cat_indices.append(ind)
-        elif tuple([list(all_pair)[0], list(all_pair)[1]+500]) in cat_coords:
+            print('500')
+        if tuple([list(all_pair)[0], list(all_pair)[1]+500]) in cat_coords:
             cat_indices.append(ind)
-        elif tuple([list(all_pair)[0]+500, list(all_pair)[1]+500]) in cat_coords:
+            print('500')
+        if tuple([list(all_pair)[0]+500, list(all_pair)[1]+500]) in cat_coords:
             cat_indices.append(ind)
+            print('500')
+
         # And with smaller offset as temperature and pet coords are on offset grid.
-        elif tuple([list(all_pair)[0]-250, list(all_pair)[1]]) in cat_coords:
+        if tuple([list(all_pair)[0]-250, list(all_pair)[1]]) in cat_coords:
             cat_indices.append(ind)
-        elif tuple([list(all_pair)[0], list(all_pair)[1]-250]) in cat_coords:
+            print('250')
+        if tuple([list(all_pair)[0], list(all_pair)[1]-250]) in cat_coords:
             cat_indices.append(ind)
-        elif tuple([list(all_pair)[0]-250, list(all_pair)[1]-250]) in cat_coords:
+            print('250')
+        if tuple([list(all_pair)[0]-250, list(all_pair)[1]-250]) in cat_coords:
             cat_indices.append(ind)
-        elif tuple([list(all_pair)[0]+250, list(all_pair)[1]]) in cat_coords:
+            print('250')
+        if tuple([list(all_pair)[0]+250, list(all_pair)[1]]) in cat_coords:
             cat_indices.append(ind)
-        elif tuple([list(all_pair)[0], list(all_pair)[1]+250]) in cat_coords:
+            print('250')
+        if tuple([list(all_pair)[0], list(all_pair)[1]+250]) in cat_coords:
             cat_indices.append(ind)
-        elif tuple([list(all_pair)[0]+250, list(all_pair)[1]+250]) in cat_coords:
+            print('250')
+        if tuple([list(all_pair)[0]+250, list(all_pair)[1]+250]) in cat_coords:
             cat_indices.append(ind)
-        elif tuple([list(all_pair)[0]-250, list(all_pair)[1]+250]) in cat_coords:
+            print('250')
+        if tuple([list(all_pair)[0]-250, list(all_pair)[1]+250]) in cat_coords:
             cat_indices.append(ind)
-        elif tuple([list(all_pair)[0]+250, list(all_pair)[1]-250]) in cat_coords:
+            print('250')
+        if tuple([list(all_pair)[0]+250, list(all_pair)[1]-250]) in cat_coords:
             cat_indices.append(ind)
+            print('250')
 
         ind += 1
+
     df = df.iloc[:, cat_indices]
+
+    print(f'\n Testing: cat_indices = {cat_indices}. Length = {len(cat_indices)}')
 
     # Convert from degK to degC if temperature
     if ms_variable == 'tas':
@@ -503,10 +532,13 @@ def make_series(
     # print("-------- writing ", variable, "...")
     headers = np.unique(cell_ids)
     headers = headers[headers >= 1]
+    print(f'\n Testing: headers (length {len(headers)}) = {headers}')
+    print(f'\n Testing: headers assigned)')
+
+    np.savetxt(map_output_path, cell_ids, fmt='%d', header=map_hdrs, comments='')
 
     df.to_csv(series_output_path, index=False, float_format='%.2f', header=headers)
-    if write_cell_id_map:
-        np.savetxt(map_output_path, cell_ids, fmt='%d', header=map_hdrs, comments='')
+    print(f'\n Testing: CSV written')
 
 
 def create_climate_files(climate_startime, climate_endtime, mask_path, catch, climate_output_folder,
@@ -744,7 +776,8 @@ def read_static_asc_csv(static_input_folder,
                             {"land_cover_key": pd.read_csv(static_input_folder + "Vegetation_Details.csv")}),
         "soil_type_APM": (["y", "x"],
                           np.loadtxt(static_input_folder + "SHETRAN_UK_SoilGrid_APM.asc", skiprows=6),
-                          {"soil_key": pd.read_csv(static_input_folder + "SHETRAN_UK_SoilDetails.csv")})},
+                          {"soil_key": pd.read_csv(static_input_folder + "SHETRAN_UK_SoilDetails.csv")})
+    },
         coords={"easting": (["y", "x"], eastings_array, {"projection": "BNG"}),
                 "northing": (["y", "x"], northings_array, {"projection": "BNG"}),
                 "x": (["x"], eastings, {"projection": "BNG"}),

@@ -5,16 +5,28 @@ SHETRAN GB Master Simulation Creator
 Ben Smith, adapted from previous codes.
 27/07/2022
 -------------------------------------------------------------
-This script should be a default script for generating SHETRAN files, it should be usable by everyone
-for all setups. If you change the setup then please change this code so that is more generic (unless
-that makes it super complex). This script often uses 'Try', which means that sometimes errors are hidden.
-Look to change that over time.
+This script is the standard script for generating SHETRAN files/models.
+Changes to the setup should be generic and user friendly / comprehensible (unless that makes it super complex).
+Be aware that this script often uses 'Try' statements, which means that sometimes errors are hidden.
+
 
 --- USER INSTRUCTIONS:
+The GitHub directory contains a .yml file that should enable users to set up the required environment.
+First, download / sync the GitHub directory onto your machine. Then open an Anaconda 3 Prompt and run the
+following code to setup the environment:
+> conda env create -f SHETRAN_UK_env.yml
+Or, to create it in a specific directory:
+> conda env create -p path\to\desired\env\directory\env_SHETRAN_UK --file path\to\yml\file\SHETRAN_UK_env.yml
+You can then activate this environment or configure your python idle to use it.
+The YML file was built using:
+> conda env export > path\to\yml\file\SHETRAN_UK_env.yml
+The built environment can be updated with a newer yml file using:
+> conda env update --file SHETRAN_UK_env.yml --prune
+
 The user should only have to edit:
  --- Set File Paths
  --- Set Processing Methods
-All other code should be fixed. Make sure that you update the correct parts of the dictionaries.
+Make sure that you update the correct parts of the dictionaries.
 'process_single_catchment["single"]' controls 'multiprocessing["process_multiple_catchments"]'
 
 --- NOTES:
@@ -22,23 +34,33 @@ This code did not run well on the blades last time I tried it  (for the UDM setu
 and northing files. I wonder whether this is due to the wrong version of xarray, but that is just a guess.
 This script uses...
 
+This file will build catchments - these require a catchment mask and all input datasets to be present.
+Datasets can be created by downloading the required data and formatting it using 'Create SHETRAN Raster Data.ipynb'.
+
+Processing the climate data is very slow due to its size. Improvements to the code / method for doing this are welcome.
+The code loads all climate data, cuts out the bit required for the catchment, and then drops the data. Very laborious.
+An attempt was made to speed this up by loading in all climate data first and then processing multiple catchments
+however this struggled with memory issues and was dropped.
+
 --- MASKS:
-Masks should be .asc
+Masks should be .asc format
+Masks MUST align with the nearest unit of resolution! Else your climate data will be blank. For example:
+    - 1000m masks should have extents rounded to the nearest 1000m;
+    - 500m masks should have extents ending in 000 or 500 etc.
 Mask paths used in multiprocessing will be:
   mask_folder_prefix + sim_mask_path + sim_name + Mask.txt
   Leave sim_mask_path in the csv blank if there are no additional bits to add in here.
   mask_folder_prefix can be changed to "" and the prefixed folder specified in the CSV
    instead if more specific naming convention is needed.
-Masks MUST align with the nearest 1000m! Else your climate data will be blank.
 Masks MUST NOT have isolated cells / diagonally connected cells. This will stop the
 SHETRAN Prepare.exe script from setting up. Remove these manually (and check any
 corresponding cell maps). Later version of SHETRAN Prepare may correct for this issue.
 
 --- Resolution
-The models can be set up in three resolutions: 1000m, 500m and 100m.
+The models can currently be set up in four resolutions: 1000m, 500m, 200m and 100m, but this is easily adaptable.
 
 This is controlled simply by the mask, which must be of the desired resolution and align with
-the 1000m, 500m or 100m grid. The input data should also match that resolution, this is done
+the 1000m, 500m, 200m or 100m grid. The input data should also match that resolution, this is done
 automatically by selecting the appropriate data folder.
 
 If the mask resolution does not match the static data resolution you will get an ERROR similar to:
@@ -46,19 +68,36 @@ If the mask resolution does not match the static data resolution you will get an
     >> dimension is 12 but corresponding boolean dimension is 6
 This is probably because one of the two have incorrect file paths.
 
+
 --- Northern Ireland:
 NI datasets are not fully included into the setup and so are processed differently. They
 do not have gridded climate data, instead, this is available in processed form for a
 selection of catchments (this was provided by Helen He at UEA). These only run until the
 end of 2010. The Northern Ireland runs should run from 01/01/1980 - 01/01/2011. This was
-incorrect in the initial version and the library files were corrected manually.
+incorrect in initial versions and the library files were corrected manually.
+
+
+--- Troubleshooting
+1. The following error may be due to reading in a mask file (or equivalent) that has decimal places in its header.
+You can probably just delete the decimal places or improve the read ascii function.
+    YourScriptName.py:50: DeprecationWarning: loadtxt(): Parsing an integer via a float is deprecated.  To avoid this warning, you can:
+        * make sure the original data is stored as integers.
+        * use the `converters=` keyword argument.  If you only use
+          NumPy 1.23 or later, `converters=float` will normally work.
+        * Use `np.loadtxt(...).astype(np.int64)` parsing the file as
+          floating point and then convert it.  (On all NumPy versions.)
+      (Deprecated NumPy 1.23)
+      arr = np.loadtxt(file_path, dtype=data_type, skiprows=6)
+
+
+---
 TODO:
  - Update the climate input data to most current period.
  - Update the scripts so that they can take the UKCP18 data.
  - Update the scripts to include other functions (e.g. UKCP18).
  - Test the multiprocessing - this wasn't used in anger with
    the historical runs, so check against UKCP18. Check q works.
- - Add a mask checker to ensure that the cells start on the 1000m
+ - Add a mask checker to ensure that extents are rounded to the nearest resolution unit.
  - Consider that creating climate simulations with this will create
    incorrect model durations, as SHETRAN runs on calendar years, but
    climate years are only 360 days.
@@ -78,11 +117,10 @@ TODO:
 
 # --- Load in Packages ----------------------------------------
 import SHETRAN_GB_Master_Setup_Functions as SF
-import pandas as pd  # for reading CSVs
+# import Shetran_setupFn_20230816g as SF
+import pandas as pd
 import numpy as np
 import time
-# import os
-# import itertools
 
 # -------------------------------------------------------------
 # --- USER INPUTS ---------------------------------------------
@@ -98,24 +136,24 @@ PET_input_folder = 'I:/CHESS/'
 
 # Set Model period: 'yyyy-mm-dd'
 start_time = '1980-01-01'
-end_time = '2011-01-01'
+end_time = '1981-01-01'
 
 # # Model Resolution:
 # resolution = 1000  # [Cell size in meters - options are: 1000, 500, 100]
 # resolution = resolution_string(resolution)
 
 # Static Input Data Folder:
-raw_input_folder = "I:/SHETRAN_GB_2021/02_Input_Data/Raw ASCII inputs for SHETRAN UK/500m/"
-
+raw_input_folder = "I:/SHETRAN_GB_2021/02_Input_Data/Raw ASCII inputs for SHETRAN UK/200m/"
 
 # --- Set Processing Methods -----------------------------------
 # PYRAMID = 'C:/Users/nbs65/Newcastle University/PYRAMID - General/WP3/02 SHETRAN Simulations/'
 process_single_catchment = dict(
     single=True,
     simulation_name='7006',
-    mask_path="I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/7006_Mask.txt",
-    # mask_path="S:/00 - Catchment Setups/Testing setup/7006.txt",
-    output_folder="S:/00 - Catchment Setups/Testing setup_500m/")
+    # mask_path="I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/7006_Mask.txt",
+    mask_path="S:/00 - Catchment Setups/Steve Birkinshaw/7006_Mask_500m.txt",
+    output_folder="S:/00 - Catchment Setups/Steve Birkinshaw/7006_500m_test/")
+
 
 # Choose Single / Multiprocessing:
 multiprocessing = dict(
