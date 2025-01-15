@@ -242,14 +242,24 @@ def get_soil_strings(orig_soil_types, new_soil_types, static_input_dataset):
 
     return soil_types_string, soil_cols_string
 
+def calculate_library_channel_parameters(grid_resolution):
+    # Set the number of upstream cells required to generate a channel - should be exponential, but linear seems to work.
+    grid_accumulation = str(int(2000/grid_resolution))  # 2000 seems to work well as a simple value.
+    # Set the minimum channel drop between cells. Default is 0.5m per 1km. Linear relationship with resolution.
+    channel_drop = str(grid_resolution/2000)
+    return grid_accumulation, channel_drop
+
 
 def create_library_file(
         sim_output_folder, catch, veg_string, soil_types_string, soil_cols_string,
-        sim_startime, sim_endtime, prcp_timestep=24, pet_timestep=24):
+        sim_startime, sim_endtime, grid_resolution, prcp_timestep=24, pet_timestep=24):
     """Create library file."""
 
     start_year, start_month, start_day = get_date_components(sim_startime)
     end_year, end_month, end_day = get_date_components(sim_endtime)
+
+    # Calculate channel parameters for library file:
+    grid_accumulation_value, channel_drop_value = calculate_library_channel_parameters(grid_resolution)
 
     output_list = [
         '<?xml version=1.0?><ShetranInput>',
@@ -290,12 +300,12 @@ def create_library_file(
         '<EndDay>{}</EndDay>'.format(end_day, '02'),
         '<EndMonth>{}</EndMonth>'.format(end_month, '02'),
         '<EndYear>{}</EndYear>'.format(end_year),
-        '<RiverGridSquaresAccumulated>2</RiverGridSquaresAccumulated> Number of upstream grid squares needed to '
-        'produce a river channel. A larger number will have fewer river channels.',
-        '<DropFromGridToChannelDepth>2</DropFromGridToChannelDepth> The standard and minimum value is 2 if there are '
+        f'<RiverGridSquaresAccumulated>{grid_accumulation_value}</RiverGridSquaresAccumulated> Number of upstream '
+        'grid squares needed to produce a river channel. A larger number will have fewer river channels.',
+        '<DropFromGridToChannelDepth>2</DropFromGridToChannelDepth> Minimum value is 2 (standard for 1km).If there are '
         'numerical problems with error 1060 this can be increased.',
-        '<MinimumDropBetweenChannels>0.5</MinimumDropBetweenChannels> This depends on the grid size and how steep the '
-        'catchment is. A value of 1 is a sensible starting point but more gently sloping catchments it can be reduced.',
+        f'<MinimumDropBetweenChannels>{channel_drop_value}</MinimumDropBetweenChannels> Depends on the grid size and '
+        'catchment steepness. 1m/1km is a sensible starting point but more gently sloping catchments it can be reduced.',
         '<RegularTimestep>1.0</RegularTimestep> This is the standard Shetran timestep it is automatically reduced in '
         'rain. The standard value is 1 hour. The maximum allowed value is 2 hours.',
         '<IncreasingTimestep>0.05</IncreasingTimestep> speed of increase in timestep after rainfall back to the '
@@ -807,7 +817,7 @@ def run_build_climate_data_with_xarray(mask_filepath, climate_output_folder, cat
 
 
 def process_catchment(
-        catch, mask_path, simulation_startime, simulation_endtime, output_subfolder, static_inputs,
+        catch, mask_path, simulation_startime, simulation_endtime, output_subfolder, static_inputs, resolution,
         produce_climate=True, prcp_data_folder=None, tas_data_folder=None, pet_data_folder=None  # ,q=None
 ):
     """
@@ -837,7 +847,7 @@ def process_catchment(
         # Create library file
         # print(catch, ": creating library file...")
         create_library_file(output_subfolder, catch, veg_string, soil_types_string, soil_cols_string,
-                            simulation_startime, simulation_endtime)
+                            simulation_startime, simulation_endtime, grid_resolution=resolution)
 
         # Create climate time series files (and cell ID map)
         if produce_climate:
@@ -864,7 +874,7 @@ def process_catchment(
 
 
 def process_mp(mp_catchments, mp_mask_folders, mp_output_folders, mp_simulation_startime,
-               mp_simulation_endtime, mp_static_inputs, mp_prcp_data_folder, mp_tas_data_folder,
+               mp_simulation_endtime, mp_static_inputs, mp_resolution, mp_prcp_data_folder, mp_tas_data_folder,
                mp_pet_data_folder, mp_produce_climate=False, num_processes=10):
     manager = mp.Manager()
     # q = manager.Queue()
@@ -874,8 +884,8 @@ def process_mp(mp_catchments, mp_mask_folders, mp_output_folders, mp_simulation_
     for catch in np.arange(0, len(mp_catchments)):
         job = pool.apply_async(process_catchment,
                                (mp_catchments[catch], mp_mask_folders[catch], mp_simulation_startime,
-                                mp_simulation_endtime, mp_output_folders[catch], mp_static_inputs, mp_produce_climate,
-                                mp_prcp_data_folder, mp_tas_data_folder, mp_pet_data_folder))
+                                mp_simulation_endtime, mp_output_folders[catch], mp_static_inputs, mp_resolution,
+                                mp_produce_climate, mp_prcp_data_folder, mp_tas_data_folder, mp_pet_data_folder))
 
         jobs.append(job)
 

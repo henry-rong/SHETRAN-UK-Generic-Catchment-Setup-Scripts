@@ -106,18 +106,14 @@ TODO:
    load all data and then cut it out, however the volume of data that
    was read in prior to the cutting was waaaaaay too large, causing
    python to crash.
- - Change the input DEM to have decimal places.
  - Consider changing Vegetation_Details.csv to LandCover_details.csv
- - RECENT:
-     - Fix issues with the Xarray.
-     - Check that the vegetation details are outputted.
-     - Setup 100m.
+ - Update YML file on github.
+
 -------------------------------------------------------------
 """
 
 # --- Load in Packages ----------------------------------------
 import SHETRAN_GB_Master_Setup_Functions as SF
-# import Shetran_setupFn_20230816g as SF
 import pandas as pd
 import numpy as np
 import time
@@ -136,24 +132,24 @@ PET_input_folder = 'I:/CHESS/'
 
 # Set Model periods (model will include given days): 'yyyy-mm-dd'
 start_time = '1980-01-01'
-end_time = '2010-12-31'
+end_time = '1980-12-31'
 
-# # Model Resolution:
-# resolution = 1000  # [Cell size in meters - options are: 1000, 500, 100]
-# resolution = resolution_string(resolution)
+# Model Resolution: This controls channel parameters in the Library file
+resolution = 200  # [Cell size in meters - options are: 1000, 500, 200, 100. Integer]
 
 # Static Input Data Folder:
-raw_input_folder = "I:/SHETRAN_GB_2021/02_Input_Data/Raw ASCII inputs for SHETRAN UK/1000m/"
+raw_input_folder = "I:/SHETRAN_GB_2021/02_Input_Data/00 - Raw ASCII inputs for SHETRAN UK/200m_v2/"
 
 # --- Set Processing Methods -----------------------------------
 # PYRAMID = 'C:/Users/nbs65/Newcastle University/PYRAMID - General/WP3/02 SHETRAN Simulations/'
 process_single_catchment = dict(
     single=True,
-    simulation_name='33029',
+    simulation_name='7006_200m',
     # mask_path="I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/7006_Mask.txt",
-    mask_path="S:/00 - Catchment Setups/Steve Birkinshaw/33029_Mask_1000m.txt",
-    output_folder="S:/00 - Catchment Setups/Steve Birkinshaw/33029_1000m/")
-
+    mask_path='S:/00 - Catchment Setups/Steve Birkinshaw/Catchment Masks/7006_Mask_200m.txt',
+    # mask_path="S:/09 - Upper Irwell - Asid Rehman/02 - SHETRAN Masks/Ogden_500m.asc",
+    # output_folder="S:/09 - Upper Irwell - Asid Rehman/03 - SHETRAN Models/Ogden_500m - test/")
+    output_folder="S:/00 - Catchment Setups/Steve Birkinshaw/7006_200m/")
 
 # Choose Single / Multiprocessing:
 multiprocessing = dict(
@@ -167,7 +163,7 @@ multiprocessing = dict(
     group="1")  # String. Not used when use_groups == False.
 
 
-# --- Set Non-Default Land Cover Types -------------------------------------
+# --- Set Non-Default Land Cover Types --- 1km Only ------------------------
 
 # Urban development: if you wish to use land cover from the Newcastle University Urban Development Model (SELECT ONE).
 Use_UrbanDevelopmentModel_2017 = False  # True / False (Default)
@@ -229,7 +225,7 @@ if __name__ == "__main__":
         SF.process_catchment(
             catch=process_single_catchment["simulation_name"],
             mask_path=process_single_catchment["mask_path"],
-            simulation_startime=start_time, simulation_endtime=end_time,
+            simulation_startime=start_time, simulation_endtime=end_time, resolution=resolution,
             output_subfolder=process_single_catchment["output_folder"], static_inputs=static_data,
             produce_climate=create_climate_data, prcp_data_folder=rainfall_input_folder,
             tas_data_folder=temperature_input_folder, pet_data_folder=PET_input_folder)
@@ -272,6 +268,7 @@ if __name__ == "__main__":
                           mp_simulation_startime=start_time,
                           mp_simulation_endtime=end_time, 
                           mp_static_inputs=static_data,
+                          resolution=resolution,
                           mp_produce_climate=create_climate_data,
                           mp_prcp_data_folder=rainfall_input_folder,
                           mp_tas_data_folder=temperature_input_folder,
