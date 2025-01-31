@@ -19,11 +19,13 @@ import os
 import itertools
 import xarray as xr
 import pandas as pd
+import geopandas as gpd
 import copy
 import datetime
 import multiprocessing as mp
 import numpy as np
 import rasterio
+from rasterio.features import rasterize
 
 
 # --- Create Functions ----------------------------------------
@@ -1021,4 +1023,56 @@ def make_cell_map(mask_filepath, output_filepath=None, write=True):
     if write:
         write_ascii(m, output_filepath, x, y, cs, data_format='%1.0f')
     return m, d
+
+
+def create_catchment_mask_from_shapefile(shapefile_path, output_ascii_path, resolution):
+    """
+    Converts a shapefile (proj:BNG) into a raster mask with specified resolution.
+    - shapefile_path: Path to the input shapefile.
+    - output_ascii_path: Path to save the output ASCII (.asc) raster file.
+    - resolution: The resolution (cell size) of the raster in map units.
+    """
+
+    # Load the shapefile
+    gdf = gpd.read_file(shapefile_path)
+
+    # Get the bounding box of the shapefile
+    minx, miny, maxx, maxy = gdf.total_bounds
+
+    # Round the bounding box to the nearest resolution
+    minx = np.floor(minx / resolution) * resolution
+    miny = np.floor(miny / resolution) * resolution
+    maxx = np.ceil(maxx / resolution) * resolution
+    maxy = np.ceil(maxy / resolution) * resolution
+
+    # Compute raster dimensions
+    width = int((maxx - minx) / resolution)
+    height = int((maxy - miny) / resolution)
+
+    # Define transform
+    transform = rasterio.transform.from_origin(minx, maxy, resolution, resolution)
+
+    # Create an empty raster with no_data_value
+    raster_data = np.full((height, width), -9999, dtype=np.float32)
+
+    # Rasterize the shapefile (set inside-mask pixels to 0)
+    shapes = [(geom, 0) for geom in gdf.geometry]
+    rasterized = rasterize(shapes, out_shape=raster_data.shape, transform=transform, fill=-9999,
+                           dtype=np.float32)
+
+    # Save to ASCII file
+    with rasterio.open(output_ascii_path, "w", driver="AAIGrid", height=height, width=width, count=1,
+                       dtype=np.float32, crs=gdf.crs, transform=transform, nodata=-9999) as dst:
+        dst.write(rasterized, 1)
+
+    print(f"Raster mask saved as: {output_ascii_path}")
+
+    # # Example usage
+    # create_catchment_mask_from_shapefile(
+    #     "S:/09 - Upper Irwell - Asid Rehman/05 - GIS/upper_irwell_catchment - Edited for SHETRAN/Catchment_Masks_Bury_Ground.shp",
+    #     "S:/09 - Upper Irwell - Asid Rehman/02 - SHETRAN Masks/Irwell_to_Bury_Ground_1000m_python.asc",
+    #     1000)
+
+
+
 
