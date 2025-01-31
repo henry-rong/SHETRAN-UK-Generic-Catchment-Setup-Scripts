@@ -531,17 +531,17 @@ def run_build_climate_data_with_xarray(mask_filepath, climate_output_folder, cat
     end_year, _, _ = get_date_components(climate_endtime)
 
     print("-------- Processing rainfall data.")
-    # prcp_input_file_names = find_rainfall_files(start_year, end_year)
-    # prcp_input_files = [os.path.join(prcp_folder, file) for file in prcp_input_file_names]
-    # series_output_path = climate_output_folder + catchment + '_Precip.csv'
-    #
-    # # if not os.path.exists(series_output_path):
-    # build_climate_data_with_xarray(
-    #     cells_map_filepath=map_output_path,
-    #     netCDF_filepath_list=prcp_input_files,
-    #     h5_variable_name='rainfall_amount',
-    #     start_date=climate_startime, end_date=climate_endtime,
-    #     climate_csv_output_filepath=series_output_path)
+    prcp_input_file_names = find_rainfall_files(start_year, end_year)
+    prcp_input_files = [os.path.join(prcp_folder, file) for file in prcp_input_file_names]
+    series_output_path = climate_output_folder + catchment + '_Precip.csv'
+
+    # if not os.path.exists(series_output_path):
+    build_climate_data_with_xarray(
+        cells_map_filepath=map_output_path,
+        netCDF_filepath_list=prcp_input_files,
+        h5_variable_name='rainfall_amount',
+        start_date=climate_startime, end_date=climate_endtime,
+        climate_csv_output_filepath=series_output_path)
 
     # Make temperature time series
     print("-------- Processing temperature data.")
