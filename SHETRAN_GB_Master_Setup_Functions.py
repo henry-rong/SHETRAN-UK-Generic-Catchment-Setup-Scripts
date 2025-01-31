@@ -26,6 +26,7 @@ import multiprocessing as mp
 import numpy as np
 import rasterio
 from rasterio.features import rasterize
+from scipy.ndimage import binary_fill_holes
 
 
 # --- Create Functions ----------------------------------------
@@ -93,7 +94,7 @@ def write_ascii(
                    )
 
 
-# Define a function to calculate the mean of valid neighbors:
+# Define a function to calculate the mean of valid neighbors (used for processing input rasters):
 def fill_holes(values):
     # This will fill all holes with a value in a neighboring cell.
 
@@ -1024,13 +1025,14 @@ def make_cell_map(mask_filepath, output_filepath=None, write=True):
         write_ascii(m, output_filepath, x, y, cs, data_format='%1.0f')
     return m, d
 
-
-def create_catchment_mask_from_shapefile(shapefile_path, output_ascii_path, resolution):
+def create_catchment_mask_from_shapefile(shapefile_path, output_ascii_path, resolution, fix_holes=True):
     """
     Converts a shapefile (proj:BNG) into a raster mask with specified resolution.
+    Optionally fills any internal holes.
     - shapefile_path: Path to the input shapefile.
     - output_ascii_path: Path to save the output ASCII (.asc) raster file.
     - resolution: The resolution (cell size) of the raster in map units.
+    - fix_holes: Boolean flag, if True, fills internal holes in the mask.
     """
 
     # Load the shapefile
@@ -1060,19 +1062,18 @@ def create_catchment_mask_from_shapefile(shapefile_path, output_ascii_path, reso
     rasterized = rasterize(shapes, out_shape=raster_data.shape, transform=transform, fill=-9999,
                            dtype=np.float32)
 
+    # If fix_holes is True, fill any holes in the mask
+    if fix_holes:
+        binary_mask = (rasterized != -9999).astype(int)  # Convert to binary
+        filled_mask = binary_fill_holes(binary_mask).astype(int)  # Fill holes
+        rasterized[filled_mask == 1] = 0  # Apply filled mask to raster
+
     # Save to ASCII file
     with rasterio.open(output_ascii_path, "w", driver="AAIGrid", height=height, width=width, count=1,
                        dtype=np.float32, crs=gdf.crs, transform=transform, nodata=-9999) as dst:
         dst.write(rasterized, 1)
 
     print(f"Raster mask saved as: {output_ascii_path}")
-
-    # # Example usage
-    # create_catchment_mask_from_shapefile(
-    #     "S:/09 - Upper Irwell - Asid Rehman/05 - GIS/upper_irwell_catchment - Edited for SHETRAN/Catchment_Masks_Bury_Ground.shp",
-    #     "S:/09 - Upper Irwell - Asid Rehman/02 - SHETRAN Masks/Irwell_to_Bury_Ground_1000m_python.asc",
-    #     1000)
-
-
-
+    if fix_holes:
+        print("Holes were detected and filled before saving.")
 
