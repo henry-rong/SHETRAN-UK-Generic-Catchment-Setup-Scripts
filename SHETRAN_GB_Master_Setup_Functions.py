@@ -16,7 +16,7 @@
 
 # --- Load in Packages ----------------------------------------
 import os
-import itertools
+# import itertools
 import xarray as xr
 import pandas as pd
 import geopandas as gpd
@@ -27,6 +27,10 @@ import numpy as np
 import rasterio
 from rasterio.features import rasterize
 from scipy.ndimage import binary_fill_holes
+import shutil
+
+# import hydroeval as he  # Slightly tricky to install needed for calculating objective functions
+# https://pypi.org/project/hydroeval/ - open conda prompt: pip install hydroeval
 
 
 # --- Create Functions ----------------------------------------
@@ -66,15 +70,8 @@ def read_ascii_raster(file_path, data_type=int, return_metadata=True, replace_NA
 
 # Create a function that can write ascii style data:
 def write_ascii(
-        array: np,
-        ascii_ouput_path: str,
-        xllcorner: float,
-        yllcorner: float,
-        cellsize: float,
-        ncols: int = None,
-        nrows: int = None,
-        NODATA_value: int = -9999,
-        data_format: str = '%1.1f'):
+        array: np, ascii_ouput_path: str, xllcorner: float, yllcorner: float,
+        cellsize: float, ncols: int = None, nrows: int = None, NODATA_value: int = -9999, data_format: str = '%1.1f'):
 
     if len(array.shape) > 0:
         nrows, ncols = array.shape
