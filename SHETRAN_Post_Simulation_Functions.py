@@ -8,16 +8,22 @@
 # functions that are generally useful for manipulating and
 # analysing SHETRAN simulations. These include data extraction,
 # analysis and visualisation.
+#
+# You can add these functions to other projects / scripts using the following code:
+#   import sys
+#   sys.path.append("I:/SHETRAN_GB_2021/01_Scripts/Other/OFFLINE Generic Catchment Setup Script/")
+#   import SHETRAN_Post_Simulation_Functions as sf
 # -------------------------------------------------------------
 
 
 # --- Load in Packages ----------------------------------------
-import hydroeval as he  # https://pypi.org/project/hydroeval/ - open conda prompt: pip install hydroeval
 import os
+import shutil
 import pandas as pd
 import numpy as np
-import shutil
 import datetime
+import hydroeval as he  # https://pypi.org/project/hydroeval/ - open conda prompt: pip install hydroeval
+import plotly.graph_objects as go
 
 
 # --- Calculate Objective Functions for Flows -----------------
@@ -29,6 +35,8 @@ def shetran_obj_functions(regular_simulation_discharge_path: str, recorded_disch
     - Assumes daily flow data, can be altered within function.
     - Assumes that recorded flows have dates and are regularly spaced, with no gaps.
     - NAs will be skipped from the analysis. NA count will be returned.
+    - A more updated version of this functions exists in the SHETRAN Optimise functions:
+        https://github.com/DrBenSmith/SHETRAN-python-optimiser
 
     TODO - consider whether you can add code that allows you to take other columns
             from the record so that they can be visualised at the end.
@@ -101,7 +109,7 @@ def shetran_obj_functions(regular_simulation_discharge_path: str, recorded_disch
 # --- Sweep Files from Blades to Folder -----------------------
 def folder_copy(source_folder, destination_folder, overwrite=False, outputs_only=False, complete_only=False):
     """
-    "I:/SHETRAN_GB_2021/scripts/Blade_Sweeper.py" will execute this function for the Blades and CONVEX.
+    I:/SHETRAN_GB_2021/scripts/Blade_Sweeper.py" will execute this function for the Blades and CONVEX.
 
     :param source_folder: E.g. "C:/BenSmith/Blade_SHETRANGB_OpenCLIM_UKCP18rcm_220708_APM/Temp_simulations/"
     :param destination_folder: E.g. "I:/SHETRAN_GB_2021/UKCP18rcm_220708_APM_GB/"
@@ -158,5 +166,140 @@ def get_date_components(date_string, fmt='%Y-%m-%d'):
     date = datetime.datetime.strptime(date_string, fmt)
     return date.year, date.month, date.day
 
+
+# --- Load SHETRAN Regular Timestep Data ----------------------
+def get_lib_from_flow(discharge_filepath: str):
+    """
+    Function for extracting the model name from the discharge file path. Used in load_shetran_LibraryDate.
+    :param discharge_filepath:  String of the file path to the SHETRAN output discharge_sim_regulartimestep.
+    :return: The filepath to the model library file (assuming typical naming convention.
+    """
+    fp_split = discharge_filepath.split('/')
+    fname = fp_split[-1].split('discharge_sim_regulartimestep')[0]
+    fname_ext = fp_split[-1].split('discharge_sim_regulartimestep')[1]
+    fname_ext = fname_ext[0:-4] if len(fname_ext) > 0 else ''
+    lib_path = '/'.join(fp_split[0:-1]) + f'/{fname[7:]}LibraryFile{fname_ext}.xml'
+    return lib_path
+
+
+def get_library_date(filepath: str):
+    """
+    Function for extracting the model start date from a Library file.
+    :param filepath: String of the file path to the SHETRAN simulation library file.
+    :return: A string of the date in format dd/mm/yyyy.
+    """
+    # Read file in read mode 'r'
+    with open(filepath, 'r') as file:
+        lines = file.readlines()
+        for line in lines:
+            if line.startswith("<StartDay>"):
+                sd = line.split('>')[1].split('<')[0]
+            if line.startswith("<StartMonth>"):
+                sm = line.split('>')[1].split('<')[0]
+            if line.startswith("<StartYear>"):
+                sy = line.split('>')[1].split('<')[0]
+        return f'{sd}/{sm}/{sy}'
+
+
+def load_shetran_discharge(flow_path: str, simulation_start_date=None):
+    """
+    This will take the simulation dates from the library file and the output timestep from the regular discharge file
+    and load in the SHETRAN discharge at the outlet.
+    :param flow_path: String of the file path to the SHETRAN output discharge_sim_regulartimestep.
+    :param simulation_start_date: string 'dd/mm/yyyy'
+    :return: Pandas dataframe of flows.
+    """
+    # Load in the flow:
+    flow = pd.read_csv(flow_path, skiprows=1, header=None)
+
+    # If a simulation start date was not given, extract one from the library file or use a default.
+    if simulation_start_date is None:
+        try:
+            # See whether there is a library file with a date in it and use that:
+            lib_name = get_lib_from_flow(flow_path)
+            simulation_start_date = get_library_date(lib_name)
+        except:
+            # If not Library file, use a default date. December 1980 for long UKCP18 scenarios, else Jan 1980.
+            simulation_start_date = "12/1/1980" if len(flow) >= 30000 else "1/1/1980"
+            print(f'Warning >load_shetran_LibraryDate< No date given or library file found.'
+                  f'Using default simulation start date: {simulation_start_date}')
+
+    # Get the timestep of the data from the discharge file:
+    timestep = pd.read_csv(flow_path, nrows=1, header=None)
+    timestep = timestep[0][0].replace(' ', '')
+    timestep = timestep.split('timestep')[-1][:-5]
+
+    # Build the flow dataframe
+    flow.index = pd.date_range(start=pd.to_datetime(simulation_start_date, dayfirst=True),
+                               periods=len(flow), freq=f'{timestep}H')
+    flow.index.name = "Date"
+    flow.columns = ["Flow"]
+    return flow
+
+
+# --- Load and prepare non-SHETRAN flow data ------------------
+def load_discharge(flow_path: str):
+    """
+    Load in non-SHETRAN flow data. Assumes two columns: Date and Flow. Column names not important. Date format is.
+    :param flow_path: String of path to the csv file.
+    :return:
+    """
+    flow = pd.read_csv(flow_path, sep='\t|,', parse_dates=[0], dayfirst=True, engine='python')
+    # Rename the columns if needed (assuming the first column contains dates and the second column contains values)
+    flow.columns = ['Date', 'Flow']
+    # Set the 'Date' column as the index
+    flow.set_index('Date', inplace=True)
+    flow['Flow'][flow['Flow'] < 0] = np.nan
+    return flow
+
+
+# --- Load and prepare SHETRAN and recorded flow data ---------
+def load_discharge_files(discharge_path):
+    """
+    Load in discharge data from SHETRAN or other sources
+    :param discharge_path:
+    :return:
+    """
+    if '_discharge_sim_regulartimestep' in discharge_path:
+        print('Loading SHETRAN regular timestep flow output')
+        flow = load_shetran_discharge(discharge_path)
+    else:
+        print('Loading non-SHETRAN data')
+        flow = load_discharge(discharge_path)
+    # else:
+    #     print('Unsure which format to use...')
+
+    flow = round(flow, 2)
+    return flow
+
+
+# --- Plot Flow Data Interactively -----------------------------
+def plot_flow_datasets(flow_path_list: dict):
+    """
+    This will plot an interactive line plot of flow data from different (correctly formatted) sources.
+    Example:
+        paths = {
+        'NRFA 69035': 'myfolder/NRFA Gauged Daily Flow 69035.csv',
+        'SHETRAN 69035': 'myfolder/output_69035_discharge_sim_regulartimestep.txt
+        }
+        plot_flow_datasets(flow_path_list=paths)
+    :param flow_path_list: Dictionary of labels and paths to SHETRAN _discharge_sim_regulartimestep files
+            or other flow datasets.
+    :return:
+    """
+    # Set up figure:
+    fig = go.Figure()
+    # Run through each dictionary item.
+    for sim_name, sim_data in flow_path_list.items():
+        # Load the flow.
+        flow = load_discharge_files(sim_data)
+        # Build the plot.
+        fig.add_trace(go.Scatter(x=flow.index, y=flow.Flow, name=sim_name, opacity=0.8))
+    # Update layout properties:
+    fig.layout['xaxis'] = dict(title=dict(text='Date'))
+    fig.layout['yaxis'] = dict(title=dict(text='Flow (cumecs)'))
+    fig.update_layout(title_text="Catchment Discharge")
+    # Show the plot:
+    fig.show()
 
 
