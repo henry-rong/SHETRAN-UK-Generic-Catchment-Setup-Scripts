@@ -24,6 +24,8 @@ import numpy as np
 import datetime
 import hydroeval as he  # https://pypi.org/project/hydroeval/ - open conda prompt: pip install hydroeval
 import plotly.graph_objects as go
+import subprocess
+from subprocess import Popen, PIPE, STDOUT
 
 
 # --- Calculate Objective Functions for Flows -----------------
@@ -301,5 +303,205 @@ def plot_flow_datasets(flow_path_list: dict):
     fig.update_layout(title_text="Catchment Discharge")
     # Show the plot:
     fig.show()
+
+
+# --- Edit the Visualisation Plan Prior to Simulation ----------
+# There are occasions where you may not want the default visualisation plan setup. This code is useful for
+# making clean edits of the file.
+
+def visualisation_plan_swap_line(old_line, new_line, file_in, file_out=None, strip_ws=True):
+    """
+    Take an existing line from the visualisation plan and replace it with a new one.
+    old_line & new_line  - Strings of the full lines in the visualisation plan (without white space,
+                            see strip_ws).
+    file_out             - Do not specify  if you want to overwrite.
+    strip_ws             - True/False depending on whether you want trailing white space to be matched and included
+                            in output. - Default True, so do not include white space in old line (and probably not new
+                             line, just for consistency).
+    ALSO, consider whether there are multiple matches.
+
+    TODO Make a replacement method based on line number instead of string matching.
+    """
+
+    if file_out is None:
+        file_out = file_in
+
+    with open(file_in, 'r') as vis:
+
+        replacement = ""
+        change_checker = 0
+
+        for line in vis:
+
+            if strip_ws:
+                line = line.rstrip()
+
+            changes = line.replace(old_line, new_line)
+
+            if line != changes:
+                change_checker += 1
+            replacement = replacement + changes + "\n"
+
+    with open(file_out, "w") as new_vis:
+        new_vis.write(replacement)
+
+    if change_checker == 0:
+        return "WARNING: No changes made"
+
+
+def visualisation_plan_remove_item(item_number, vis_file_in=str, vis_file_out=None):
+    """
+    Strip outputs from the visualisation plan based on their number.
+    If you use this in combination with the number altering, that you need to match the altered number.
+    If you are removing multiple items, remove the higher numbers first. E.g.
+        for n in [6, 5, 4, 3, 1]:
+            visualisation_plan_remove_item(item_number=n, vis_file_in=vis_plan_filepath)
+    :param item_number: string or integer relating to item number (e.g. NUMBER^1)
+    :param vis_file_in: string filepath to the visualisation plan.
+    :param vis_file_out: string filepath to an output if you want this to differ from the original.
+    :return: a new visualisation plan, overwriting the original unless specified.
+    """
+
+    if vis_file_out is None:
+        vis_file_out = vis_file_in
+
+    with open(vis_file_in, 'r') as vis:
+        updated_text = ""
+        number_corrector = 0
+        changes_made = False
+
+        for line in vis:
+            line = line.strip().split(" : ")
+
+            # # IF the line starts with item then skip ('item' will be written later)
+            if line[0].startswith("item"):
+                continue
+
+            # IF the line starts with NUMBER, decide whether to read or write:
+            # if line[0][0:len(line[0]) - 2] == "NUMBER":
+            if line[0].startswith('NUMBER'):
+
+                # # IF it is the number of interest read the next line too, not writing either
+                # # and add one to the index corrector:
+                # if line[0][-1] == str(item_number):
+                if line[0].startswith(f'NUMBER^{str(item_number)}'):
+                    next(vis)
+                    number_corrector += 1
+                    changes_made = True
+
+                # IF a different number:
+                else:
+                    new_number = int(line[0][-1]) - number_corrector
+                    line[0] = str(line[0][0:len(line[0]) - 1] + str(new_number))
+                    updated_text = updated_text + 'item \n' + " : ".join(line) + "\n" + next(vis)
+
+            # If neither, just copy the line:
+            else:
+                updated_text = updated_text + " : ".join(line) + "\n"
+
+    with open(vis_file_out, "w") as new_vis:
+        new_vis.write(updated_text)
+
+    if not changes_made:
+        return "WARNING: No lines were edited"
+
+
+def clean_visualisation_plan(vis_plan_filepath):  # , clear_level=False
+
+    # if clear_level:
+    #     for n in [6, 5, 4, 3, 2, 1]:
+    #         visualisation_plan_remove_item(item_number=n, vis_file_in=vis_plan_filepath)
+    # else:
+    for n in [6, 5, 4, 3, 1]:
+        visualisation_plan_remove_item(item_number=n, vis_file_in=vis_plan_filepath)
+
+    visualisation_plan_swap_line(old_line="GRID_OR_LIST_NO^7 : TIMES^8 : ENDITEM",
+                                 new_line="GRID_OR_LIST_NO^7 : TIMES^9 : ENDITEM",
+                                 file_in=vis_plan_filepath)
+
+    visualisation_plan_swap_line(
+        old_line="NUMBER^1 : NAME^ph_depth : BASIS^grid_as_grid : SCOPE^squares :  EXTRA_DIMENSIONS^none",
+        new_line="NUMBER^1 : NAME^ph_depth : BASIS^grid_as_list : SCOPE^squares :  EXTRA_DIMENSIONS^none",
+        file_in=vis_plan_filepath)
+
+
+# --- Edit RunData File ----------------------------------------
+def edit_RunData_line(rundata_filepath, element_number, entry):
+    """
+    Sometimes we may want to add or change the content of the rundata file (between preparing and running the simulation
+    For example if we want to add a baseflow file or additional discharge outputs.
+    :param rundata_filepath: string filepath to the rundata file.
+    :param element_number: Str or int of the line number that will be edited. E.g.
+                            35 for >> 35: column base flow boundary condition (BFB).
+    :param entry: String for the new entry.
+    :return: will overwrite the rundata file with the new entry.
+    """
+
+    # Read file in read mode 'r'
+    with open(rundata_filepath, 'r') as file:
+        lines = file.readlines()
+
+    # Run through the contents and overwrite the relevant line with the new content, else write the existing line:
+    with open(rundata_filepath, 'w') as file:
+        for line in lines:
+            if line.startswith(str(element_number) + ":"):
+                file.writelines(line)
+                file.writelines(entry)  # This must not have an empty line beneath it.
+            else:
+                file.writelines(line)
+
+
+# --- Run SHETRAN Through Python Skipping Errors ---------------
+def run_SHETRAN_skip_pause(exe_filepath, rundata_filepath, print_timestep=True, force_continue=False):
+    """
+    The following code can be used to run SHETRAN through python in such away that any issues with the model will be
+    skipped over. This is useful when trying to run the model lots of times, such as during an optimisation when a
+    failed model is not important but a paused script is.
+    :param exe_filepath: file path of the SHETRAN.exe executable
+    :param rundata_filepath: file path to the run data file
+    :param print_timestep: TRUE/FALSE - this is modely useful for troubleshooting, else it will fill the console.
+    :param force_continue: TRUE/FALSE - use according to whether you wish to skip any FORTRAN Pauses or Errors.
+    :return:
+    """
+    if not force_continue:
+        subprocess.call([exe_filepath, '-f ', rundata_filepath])
+        return True
+    else:
+        successful_simulation = True
+        # Run the exe, passing outputs and errors to process so that they can be monitored
+        with Popen([exe_filepath, '-f ', rundata_filepath], stdout=PIPE, stderr=STDOUT, text=True) as process:  # stdin=PIPE
+            while successful_simulation:
+                out = process.stdout.readline().lstrip()  # .decode('utf-8')
+
+                # If user wants the timestep to be printed, print the output:
+                if print_timestep:
+                    print(out)
+
+                # Catch SHETRAN Pauses and skip to the next simulation:
+                if out.startswith("Fortran Pause"):
+                    print('\n"FORTRAN PAUSE" detected. Exiting simulation.', flush=True, end="\n")
+                    successful_simulation = False
+                    process.kill()
+                    break  # process.terminate() # process.communicate('\n') # process.****()
+
+                # Catch Fortran Errors and skip to the next simulation:
+                if out.startswith("forrtl"):  # or out.startswith('forrtl')
+                    print(f'\n Error detected. Exiting simulation. Error: \n {out}', flush=True, end="\n")
+                    successful_simulation = False
+                    process.kill()
+                    break
+
+                # Once finished, move on to the analysis:
+                if out.startswith('ABNORMAL END'):
+                    successful_simulation = False
+                    process.kill()
+                    break
+
+                # Once finished, move on to the analysis:
+                if out.startswith('Normal completion'):
+                    break
+
+        return successful_simulation
+
 
 
