@@ -203,16 +203,27 @@ def get_library_date(filepath: str):
         return f'{sd}/{sm}/{sy}'
 
 
-def load_shetran_discharge(flow_path: str, simulation_start_date=None):
+def load_shetran_discharge(flow_path: str, simulation_start_date=None, discharge_column: int=0):
     """
     This will take the simulation dates from the library file and the output timestep from the regular discharge file
-    and load in the SHETRAN discharge at the outlet.
+    and load in the SHETRAN discharge at the outlet (or specified points).
+    :param discharge_column: integer specifying which column to read from the discharge file. This is only relevant if
+            multiple discharge points are being used (as specified using frame 47 inthe rundata file).
     :param flow_path: String of the file path to the SHETRAN output discharge_sim_regulartimestep.
     :param simulation_start_date: string 'dd/mm/yyyy'
     :return: Pandas dataframe of flows.
     """
+    
+    # Check whether the discharge file contains a single outlet discharge, or discharges from multiple points:
+    checker = pd.read_csv(flow_path, skiprows=1, nrows=1, header=None, sep='"" | ', engine='python')
+    if checker[0].values[0] == 'Outlet':
+        row_skip = 2
+    else:
+        row_skip = 1
+
     # Load in the flow:
-    flow = pd.read_csv(flow_path, skiprows=1, header=None)
+    flow = pd.read_csv(flow_path, skiprows=row_skip, header=None,
+                       usecols=[discharge_column], sep='"" | ', engine='python')
 
     # If a simulation start date was not given, extract one from the library file or use a default.
     if simulation_start_date is None:
