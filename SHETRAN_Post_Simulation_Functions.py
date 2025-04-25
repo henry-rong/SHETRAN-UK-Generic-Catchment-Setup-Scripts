@@ -162,11 +162,11 @@ def folder_copy(source_folder, destination_folder, overwrite=False, outputs_only
         return "No files to copy..."
 
 
-# --- Get Date Components from a data string ------------------
-def get_date_components(date_string, fmt='%Y-%m-%d'):
-    # "1980/01/01"
-    date = datetime.datetime.strptime(date_string, fmt)
-    return date.year, date.month, date.day
+# # --- Get Date Components from a data string ------------------ Already in Master Functions
+# def get_date_components(date_string, fmt='%Y-%m-%d'):
+#     # "1980/01/01"
+#     date = datetime.datetime.strptime(date_string, fmt)
+#     return date.year, date.month, date.day
 
 
 # --- Load SHETRAN Regular Timestep Data ----------------------
@@ -257,7 +257,7 @@ def load_discharge(flow_path: str):
     :param flow_path: String of path to the csv file.
     :return:
     """
-    flow = pd.read_csv(flow_path, sep='\t|,', parse_dates=[0], dayfirst=True, engine='python')
+    flow = pd.read_csv(flow_path, sep='\t|,', parse_dates=[0], dayfirst=True, engine='python', skiprows=1)
     # Rename the columns if needed (assuming the first column contains dates and the second column contains values)
     flow.columns = ['Date', 'Flow']
     # Set the 'Date' column as the index
@@ -313,7 +313,9 @@ def plot_flow_datasets(flow_path_list: dict):
     fig.layout['yaxis'] = dict(title=dict(text='Flow (cumecs)'))
     fig.update_layout(title_text="Catchment Discharge")
     # Show the plot:
-    fig.show()
+    
+    # fig.show()  # This has been changed as this does not work in Dash Apps, which need the plotly object, not just the shown figure. You will need to add '.show()' to code that is using the shown output not the updated plotly object. 
+    return fig
 
 
 # --- Edit the Visualisation Plan Prior to Simulation ----------
