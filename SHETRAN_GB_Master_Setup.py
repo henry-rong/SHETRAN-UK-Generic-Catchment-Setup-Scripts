@@ -143,8 +143,8 @@ temperature_input_folder = 'I:/CHESS/CHESS_temperature_daily/'
 PET_input_folder = 'I:/CHESS/CHESS_PET_daily/'
 
 # Set Model periods (model will include given days): 'yyyy-mm-dd'
-start_time = '2015-10-20'
-end_time = '2016-01-15'
+start_time = '1980-01-01'
+end_time = '2019-12-31'
 
 # Model Resolution: This controls channel parameters in the Library file
 resolution = 1000  # [Cell size in meters - options are: 1000, 500, 200, 100. Integer]
@@ -154,7 +154,7 @@ raw_input_folder = "I:/SHETRAN_GB_2021/02_Input_Data/00 - Raw ASCII inputs for S
 
 # --- Set Processing Methods -----------------------------------
 process_single_catchment = dict(
-    single=True,
+    single=False,
     simulation_name='4006',
     mask_path= "I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/4006_Mask.txt",
     # output_folder="I:/SHETRAN_GB_2021/04_Historical_Simulations/SHETRAN_UK_APM_Historical_HADUK/4006/")  # end with '/'
@@ -166,7 +166,7 @@ multiprocessing = dict(
     process_multiple_catchments=not process_single_catchment["single"],
     simulation_list_csv='I:/SHETRAN_GB_2021/01_Scripts/Other/OFFLINE Generic Catchment Setup Script/Simulation_Setup_List.csv',
     mask_folder_prefix='I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/',  # 1kmBngMasks_Processed/', # I:\SHETRAN_GB_2021\02_Input_Data\superseded\1kmBngMasks
-    output_folder_prefix="I:/SHETRAN_GB_2021/02_Input_Data/Catchment Maps - UDM/UDM_GB_LandCover_SSP4_2080/",  # 'I:/SHETRAN_GB_2021/02_Input_Data/NFM Catchment Maps/NFM_Maximum/',
+    output_folder_prefix="I:/SHETRAN_GB_2021/04_Historical_Simulations/SHETRAN_UK_APM_Historical_HADUK/",  # 'I:/SHETRAN_GB_2021/02_Input_Data/NFM Catchment Maps/NFM_Maximum/',
     use_multiprocessing=True,  # May only work on Blades?
     n_processes=30,  # For use on the blades
     use_groups=True,  # [True, False][1]
@@ -278,7 +278,7 @@ if __name__ == "__main__":
                           mp_simulation_startime=start_time,
                           mp_simulation_endtime=end_time, 
                           mp_static_inputs=static_data,
-                          resolution=resolution,
+                          mp_resolution=resolution,
                           mp_produce_climate=create_climate_data,
                           mp_prcp_data_folder=rainfall_input_folder,
                           mp_tas_data_folder=temperature_input_folder,
