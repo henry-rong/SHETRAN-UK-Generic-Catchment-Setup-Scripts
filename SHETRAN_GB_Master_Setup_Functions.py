@@ -12,6 +12,11 @@
 # Notes:
 # CHESS rainfall reads in the Y coordinates backwards, if you
 # change the meteorological inputs then check the coordinates.
+# The .nc files are loaded in chunks to speed up the processes.
+# This requires the 'dask' package (pip install dask / conda 
+# install dask if needed).
+# The script now accepts rainfall from HADUK and CHESS datasets.
+# PET and Temperature have only been tested with HADUK data.
 # -------------------------------------------------------------
 
 # --- Load in Packages ----------------------------------------
@@ -22,11 +27,13 @@ import pandas as pd
 import geopandas as gpd
 import copy
 import datetime
+from datetime import timedelta
 import multiprocessing as mp
 import numpy as np
 import rasterio
 from rasterio.features import rasterize
 from scipy.ndimage import binary_fill_holes
+import warnings
 import shutil
 
 # import hydroeval as he  # Slightly tricky to install needed for calculating objective functions
@@ -57,7 +64,7 @@ def read_ascii_raster(file_path, data_type=int, return_metadata=True, replace_NA
 
     # If required, swap out the no data values for np.nan:
     if replace_NA:
-       arr[arr==nodata] = np.nan
+        arr[arr == nodata] = np.nan
 
     headers = '\n'.join(headers)
     headers = headers.rstrip()
@@ -72,7 +79,6 @@ def read_ascii_raster(file_path, data_type=int, return_metadata=True, replace_NA
 def write_ascii(
         array: np, ascii_ouput_path: str, xllcorner: float, yllcorner: float,
         cellsize: float, ncols: int = None, nrows: int = None, NODATA_value: int = -9999, data_format: str = '%1.1f'):
-
     if len(array.shape) > 0:
         nrows, ncols = array.shape
 
@@ -119,7 +125,9 @@ def cell_reduce(array, block_size, func=np.nanmean):
     return func(array.reshape(shape), axis=(1, 3), )
 
 
+# --- Get Date Components from a data string ------------------
 def get_date_components(date_string, fmt='%Y-%m-%d'):
+    # "1980/01/01"
     date = datetime.datetime.strptime(date_string, fmt)
     return date.year, date.month, date.day
 
@@ -219,11 +227,12 @@ def get_soil_strings(orig_soil_types, new_soil_types, static_input_dataset):
 
     return soil_types_string, soil_cols_string
 
+
 def calculate_library_channel_parameters(grid_resolution):
     # Set the number of upstream cells required to generate a channel - should be exponential, but linear seems to work.
-    grid_accumulation = str(int(2000/grid_resolution))  # 2000 seems to work well as a simple value.
+    grid_accumulation = str(int(2000 / grid_resolution))  # 2000 seems to work well as a simple value.
     # Set the minimum channel drop between cells. Default is 0.5m per 1km. Linear relationship with resolution.
-    channel_drop = str(grid_resolution/2000)
+    channel_drop = str(grid_resolution / 2000)
     return grid_accumulation, channel_drop
 
 
@@ -377,6 +386,37 @@ def find_rainfall_files(year_from, year_to):
     return x
 
 
+def get_rainfall_filenames(climate_startime, climate_endtime, dataset_type="GEAR"):
+    """
+    Returns a list of rainfall data filenames between climate_startime and climate_endtime.
+    - dataset_type: "GEAR" (yearly, e.g., 2015.nc) or "HADUK" (monthly, e.g., rainfall_hadukgrid_uk_1km_day_20150701-20150731.nc)
+    """
+    start_date = datetime.datetime.strptime(climate_startime, "%Y-%m-%d")
+    end_date = datetime.datetime.strptime(climate_endtime, "%Y-%m-%d")
+    filenames = []
+
+    if dataset_type.upper() == "GEAR":
+        for year in range(start_date.year, end_date.year + 1):
+            filenames.append(f"{year}.nc")
+    elif dataset_type.upper() == "HADUK":
+        current = datetime.datetime(start_date.year, start_date.month, 1)
+        while current <= end_date:
+            # Get last day of the month
+            next_month = current.replace(day=28) + timedelta(days=4)
+            last_day = (next_month - timedelta(days=next_month.day)).day
+            month_start = current.strftime("%Y%m01")
+            month_end = current.strftime(f"%Y%m{last_day:02d}")
+            filenames.append(f"rainfall_hadukgrid_uk_1km_day_{month_start}-{month_end}.nc")
+            # Move to next month
+            if current.month == 12:
+                current = current.replace(year=current.year + 1, month=1)
+            else:
+                current = current.replace(month=current.month + 1)
+    else:
+        raise ValueError("dataset_type must be 'GEAR' or 'HADUK'")
+    return filenames
+
+
 def find_CHESS_temperature_or_PET_files(folder_path, year_from, year_to):
     files = sorted(os.listdir(folder_path))
     x = []
@@ -387,48 +427,56 @@ def find_CHESS_temperature_or_PET_files(folder_path, year_from, year_to):
     return x
 
 
-def load_and_crop_xarray(filepath, mask):
+def load_and_crop_xarray(filepath, mask, x_dim="x", y_dim="y", variable_name="rainfall_amount"):
+    
     # Load the dataset
     ds = xr.open_dataset(filepath)
+    # Loading the data in chunks "(filepath, chunks={x_dim: 100, y_dim: 100})" will speed up the code significantly..
+    # However, this requires the dask module, which can be tricky to install, so is not included as default.
+    ds = ds[[variable_name]]  # Keep only the rainfall variable.
 
     # Get the bounding box from the mask
     mask_bounds = {  # We are adding a buffer just to be safe, this seems to help!
-        "x_min": mask.x.min().item()-1000,
-        "x_max": mask.x.max().item()+1000,
-        "y_min": mask.y.min().item()-1000,
-        "y_max": mask.y.max().item()+1000,
+        "x_min": mask[x_dim].min().item() - 1000,
+        "x_max": mask[x_dim].max().item() + 1000,
+        "y_min": mask[y_dim].min().item() - 1000,
+        "y_max": mask[y_dim].max().item() + 1000,
     }
 
     # Crop the dataset to the mask's bounding box. Do this according to which way y axis is ordered (differs for different datasets).
-    y_coords = ds.y.values
+    y_coords = ds[y_dim].values
     if (y_coords[1] - y_coords[0]) > 0:
         cropped_ds = ds.sel(
-            # Cropping with .sel() may load the full dataset if it is too large. If this is a concern, consider using rioxarray for better I/O efficiency.
-            x=slice(mask_bounds["x_min"], mask_bounds["x_max"]),
-            y=slice(mask_bounds["y_min"], mask_bounds["y_max"]),
+            **{x_dim: slice(mask_bounds["x_min"], mask_bounds["x_max"]),
+               y_dim: slice(mask_bounds["y_min"], mask_bounds["y_max"])}
         )
         # print("y-coordinates are increasing.")
     else:
         cropped_ds = ds.sel(
-            x=slice(mask_bounds["x_min"], mask_bounds["x_max"]),
-            y=slice(mask_bounds["y_max"], mask_bounds["y_min"]),
+            **{x_dim: slice(mask_bounds["x_min"], mask_bounds["x_max"]),
+               y_dim: slice(mask_bounds["y_max"], mask_bounds["y_min"])}
         )
         # print("y-coordinates are decreasing.")
 
     return cropped_ds
 
-def build_climate_data_with_xarray(cells_map_filepath, netCDF_filepath_list, h5_variable_name,
-                                   start_date, end_date, climate_csv_output_filepath):
-    """
 
-    :param cells_map_filepath: filepath to a Cells ascii file.
+def build_climate_data_with_xarray(cells_map_filepath, netCDF_filepath_list, h5_variable_name,
+                                   start_date, end_date, climate_csv_output_filepath,
+                                   x_dim="x", y_dim="y"):  # , rain_var_name=None
+    """
+    :param cells_map_filepath: Filepath to the ascii raster of cell numbers.
     :param netCDF_filepath_list: Must be a list of full filepaths.
-    :param h5_variable_name: 'pet' (CHESS), 'tas' (CHESS), rainfall_amount (GEAR).
-    :param climate_csv_output_filepath:
+    :param h5_variable_name: 'pet' (CHESS), 'tas' (CHESS), 'rainfall_amount' (GEAR), 'rainfall' (HADUKgrid).
+    :param start_date: 'yyyy-mm-dd' format.
+    :param end_date: 'yyyy-mm-dd' format.
+    :param climate_csv_output_filepath: Output filepath for the climate data csv.
+    :param x_dim: x dimension name (default 'x')
+    :param y_dim: y dimension name (default 'y')
+    # :param rain_var_name: variable name for rainfall (if None, uses h5_variable_name)
     :return:
     """
-
-    # Load the ASCII raster of cell numbers
+    # Load the ASCII raster of cell numbers:
     with rasterio.open(cells_map_filepath) as src:
         mask_data = src.read(1)  # Read the first (and likely only) band
         mask_transform = src.transform
@@ -439,21 +487,26 @@ def build_climate_data_with_xarray(cells_map_filepath, netCDF_filepath_list, h5_
     mask_y = np.arange(mask_height) * mask_transform[4] + mask_transform[5]
 
     # The mask works best if it uses centroids, but this may change depending on the data source!
-    # TODO: This is for further consideration / checks, but works well so far.
     mask_x = mask_x + mask_transform[0] / 2
     mask_y = mask_y - mask_transform[0] / 2
 
     # Build the mask into an xarray:
     mask = xr.DataArray(
         mask_data,
-        coords={"y": mask_y, "x": mask_x},
-        dims=["y", "x"],
+        coords={y_dim: mask_y, x_dim: mask_x},
+        dims=[y_dim, x_dim],
         name="mask",
     )
 
     # Load the climate data:
     print('------------ Reading datasets...')
-    datasets = [load_and_crop_xarray(fp, mask) for fp in netCDF_filepath_list]
+    # Create a list to hold the datasets:
+    datasets = []
+    for fp in netCDF_filepath_list:
+        ds = load_and_crop_xarray(fp, mask, x_dim=x_dim, y_dim=y_dim, variable_name=h5_variable_name)
+        # Drop lat/lon/crs variables if present to ensure compatibility for concat (variables differ between newer and older downloads of CHESS PET).
+        ds = ds.drop_vars([v for v in ['lat', 'lon', 'crs'] if v in ds.variables], errors='ignore')
+        datasets.append(ds)
     print('------------ Formatting arrays...')
 
     # Stack these into a single xarray ordered by time variable:
@@ -463,11 +516,10 @@ def build_climate_data_with_xarray(cells_map_filepath, netCDF_filepath_list, h5_
     ds_cropped = stacked_ds.sel(time=slice(start_date, end_date))
 
     # Interpolate the stacked dataset to the mask's grid resolution.
-    # This will take the nearest cell if the mask cell crosses multiple climate cells.
+# This will take the nearest cell if the mask cell crosses multiple climate cells.
     # TODO: You may wish to change this to linear interpolation (or similar). This tends to prioritise the lower left value.
     stacked_resampled = ds_cropped.interp(
-        x=mask.x,
-        y=mask.y,
+        **{x_dim: mask[x_dim], y_dim: mask[y_dim]},
         method="nearest"  # Or 'linear' for smoother interpolation
     )
 
@@ -475,8 +527,13 @@ def build_climate_data_with_xarray(cells_map_filepath, netCDF_filepath_list, h5_
 
     # Flatten the mask and rainfall data:
     mask_flat = mask.values.flatten()  # Convert mask to a 1D array
-    climate_flattened = stacked_resampled[h5_variable_name].values.reshape(stacked_resampled.sizes["time"],
-                                                                           -1)  # Reshape rainfall to [time, all grid cells]
+    # var_name = rain_var_name if rain_var_name is not None else h5_variable_name
+    try:
+        # Reshape rainfall data to [time, all grid cells]:
+        climate_flattened = stacked_resampled[h5_variable_name].values.reshape(stacked_resampled.sizes["time"], -1)
+    except KeyError:
+        warnings.warn(f"Variable '{h5_variable_name}' not found in dataset. Available: {list(stacked_resampled.data_vars)}")
+        return
 
     # Get indices of active cells:
     active_indices = mask_flat > 0
@@ -504,8 +561,12 @@ def build_climate_data_with_xarray(cells_map_filepath, netCDF_filepath_list, h5_
     climate_df.to_csv(climate_csv_output_filepath, index=False)
 
 
-def run_build_climate_data_with_xarray(mask_filepath, climate_output_folder, catchment, climate_startime, climate_endtime,
-                                       prcp_folder, tas_folder, pet_folder):
+def run_build_climate_data_with_xarray(mask_filepath, climate_output_folder, catchment, climate_startime,
+                                       climate_endtime,
+                                       prcp_folder, tas_folder, pet_folder,
+                                       prcp_x_dim="x", prcp_y_dim="y", prcp_var_name="rainfall_amount",
+                                       tas_x_dim="x", tas_y_dim="y", tas_var_name="tas",
+                                       pet_x_dim="x", pet_y_dim="y", pet_var_name="pet"):
     """
     This will run the function for building climate csv's and the cell map.
     The tas and pet files are located, the rainfall files are built from scratch as their names are easy. This doesn't havet o be the case and could be changed.
@@ -516,9 +577,9 @@ def run_build_climate_data_with_xarray(mask_filepath, climate_output_folder, cat
     :param prcp_folder:
     :param tas_folder:
     :param pet_folder:
+    :param *_x_dim, *_y_dim, *_var_name: dimension and variable names for each data type
     :return:
     """
-
     # Create the cell map:
     map_output_path = climate_output_folder + catchment + '_Cells.asc'
     make_cell_map(mask_filepath, map_output_path)
@@ -527,46 +588,52 @@ def run_build_climate_data_with_xarray(mask_filepath, climate_output_folder, cat
     start_year, _, _ = get_date_components(climate_startime)
     end_year, _, _ = get_date_components(climate_endtime)
 
+    # --- Rainfall
     print("-------- Processing rainfall data.")
-    prcp_input_file_names = find_rainfall_files(start_year, end_year)
+    if 'haduk' in prcp_folder.lower():
+        # If using HADUK data, we need to find the filenames based on the start and end dates.
+        prcp_input_file_names = get_rainfall_filenames(climate_startime, climate_endtime, dataset_type="HADUK")
+    elif 'gear' in prcp_folder.lower():
+        prcp_input_file_names = get_rainfall_filenames(start_year, end_year, dataset_type="GEAR")
+    else:
+        print("Warning: Unrecognised rainfall data folder. Ensure HADUK or GEAR is written in folderpath.")
     prcp_input_files = [os.path.join(prcp_folder, file) for file in prcp_input_file_names]
     series_output_path = climate_output_folder + catchment + '_Precip.csv'
 
-    # if not os.path.exists(series_output_path):
     build_climate_data_with_xarray(
         cells_map_filepath=map_output_path,
         netCDF_filepath_list=prcp_input_files,
-        h5_variable_name='rainfall_amount',
+        h5_variable_name=prcp_var_name,
         start_date=climate_startime, end_date=climate_endtime,
-        climate_csv_output_filepath=series_output_path)
+        climate_csv_output_filepath=series_output_path,
+        x_dim=prcp_x_dim, y_dim=prcp_y_dim)  #, rain_var_name=prcp_var_name)
 
-    # Make temperature time series
+    # --- Temperature
     print("-------- Processing temperature data.")
     tas_input_filenames = find_CHESS_temperature_or_PET_files(tas_folder, start_year, end_year)
     tas_input_files = [os.path.join(tas_folder, file) for file in tas_input_filenames]
     series_output_path = climate_output_folder + catchment + '_Temp.csv'
 
-    # if not os.path.exists(series_output_path):
     build_climate_data_with_xarray(
         cells_map_filepath=map_output_path,
         netCDF_filepath_list=tas_input_files,
-        h5_variable_name='tas',
+        h5_variable_name=tas_var_name,
         start_date=climate_startime, end_date=climate_endtime,
-        climate_csv_output_filepath=series_output_path)
+        climate_csv_output_filepath=series_output_path,
+        x_dim=tas_x_dim, y_dim=tas_y_dim)  #, rain_var_name=tas_var_name)
 
     # --- PET
     print("-------- Processing evapotranspiration data.")
-    # Make PET time series
     pet_input_filenames = find_CHESS_temperature_or_PET_files(pet_folder, start_year, end_year)
     pet_input_files = [os.path.join(pet_folder, file) for file in pet_input_filenames]
     series_output_path = climate_output_folder + catchment + '_PET.csv'
-    # if not os.path.exists(series_output_path):
     build_climate_data_with_xarray(
         cells_map_filepath=map_output_path,
         netCDF_filepath_list=pet_input_files,
-        h5_variable_name='pet',
+        h5_variable_name=pet_var_name,
         start_date=climate_startime, end_date=climate_endtime,
-        climate_csv_output_filepath=series_output_path)
+        climate_csv_output_filepath=series_output_path,
+        x_dim=pet_x_dim, y_dim=pet_y_dim)  #, rain_var_name=pet_var_name)
 
 
 def process_catchment(
@@ -609,6 +676,18 @@ def process_catchment(
             # prcp_data_folder, tas_data_folder, pet_data_folder)  # ^^ This method does not work well for catchments
             # with resolutions != 1000m. run_build_climate_data_with_xarray is preferred.
 
+            # If using HADUK rainfall, set the variable names to match the HADUK data.
+            # (e.g., rainfall_hadukgrid_uk_1km_day_20150701-20150731.nc)
+            # PET and temperature data are assumed to always be CHESS data, which have different variable names.
+            if 'haduk' in prcp_data_folder.lower():
+                prcp_var_name = "rainfall"
+                prcp_x_dim = "projection_x_coordinate"
+                prcp_y_dim = "projection_y_coordinate"
+            else:
+                prcp_var_name = "rainfall_amount"
+                prcp_x_dim = "x"
+                prcp_y_dim = "y"
+
             run_build_climate_data_with_xarray(
                 mask_filepath=mask_path,
                 climate_output_folder=output_subfolder,
@@ -617,7 +696,10 @@ def process_catchment(
                 climate_endtime=simulation_endtime,
                 prcp_folder=prcp_data_folder,
                 tas_folder=tas_data_folder,
-                pet_folder=pet_data_folder)
+                pet_folder=pet_data_folder,
+                prcp_x_dim=prcp_x_dim, prcp_y_dim=prcp_y_dim, prcp_var_name=prcp_var_name,
+                tas_x_dim="x", tas_y_dim="y", tas_var_name="tas",
+                pet_x_dim="x", pet_y_dim="y", pet_var_name="pet")
 
         # sys.exit()
 
@@ -696,7 +778,7 @@ def read_static_asc_csv(static_input_folder,
 
     # Load in the coordinate data (assumes all data has same coordinates:
     _, ncols, nrows, xll, yll, cellsize, _, _, _ = read_ascii_raster(static_input_folder + "SHETRAN_UK_DEM.asc",
-                                                                  return_metadata=True)
+                                                                     return_metadata=True)
 
     # Create eastings and northings. Note, the northings are reversed to match the maps
     eastings = np.arange(xll, ncols * cellsize + yll, cellsize)
@@ -761,6 +843,7 @@ def resolution_string(res):
     else:
         return f'{str(res)}/'
 
+
 def make_cell_map(mask_filepath, output_filepath=None, write=True):
     """
     This will build the Cells.txt file from a mask.
@@ -774,6 +857,7 @@ def make_cell_map(mask_filepath, output_filepath=None, write=True):
     if write:
         write_ascii(m, output_filepath, x, y, cs, data_format='%1.0f')
     return m, d
+
 
 def create_catchment_mask_from_shapefile(shapefile_path, output_ascii_path, resolution, fix_holes=True):
     """
@@ -828,141 +912,10 @@ def create_catchment_mask_from_shapefile(shapefile_path, output_ascii_path, reso
         print("Holes were detected and filled before saving.")
 
 
-# --- Calculate Objective Functions for Flows -----------------
-def shetran_obj_functions(regular_simulation_discharge_path: str, recorded_discharge_path: str,
-                          start_date: str, period: list = None, recorded_date_discharge_columns: list = None,
-                          return_flows=False, return_period=False):
-    """
-    Notes:
-    - Assumes daily flow data, can be altered within function.
-    - Assumes that recorded flows have dates and are regularly spaced, with no gaps.
-    - NAs will be skipped from the analysis. NA count will be returned.
-
-    TODO - consider whether you can add code that allows you to take other columns
-            from the record so that they can be visualised at the end.
-
-    regular_simulation_discharge_path:  Path to the txt file
-    recorded_discharge_path:            Path to the csv file
-    start_date:                         The start date of the simulated flows: "DD-MM-YYYY"
-    period:                             The period to use (i.e. calibration/validation) as a list of dates:
-                                        ["YYY-MM-DD", "YYY-MM-DD"].
-                                        Leave blank if you want to use the whole thing.
-                                        Leave as single item in list if you want to use until the end of the data.
-    recorded_date_discharge_columns:    The columns (as a list) that contain the date and then flow data.
-    RETURNS:                            The NSE value as an array.
-    """
-
-    # --- Read in the flows for Sim and Rec:
-    if recorded_date_discharge_columns is None:
-        recorded_date_discharge_columns = ["date", "discharge_vol"]
-
-    flow_rec = pd.read_csv(recorded_discharge_path,
-                           usecols=recorded_date_discharge_columns,
-                           parse_dates=[recorded_date_discharge_columns[0]])
-
-    # Set the columns to the following so that they are always correctly referenced:
-    # (Do not use recorded_date_discharge_columns!)
-    flow_rec.columns = ["date", "discharge_vol"]
-    flow_rec = flow_rec.set_index('date')
-
-    # Read in the simulated flows:
-    flow_sim = pd.read_csv(regular_simulation_discharge_path)
-    flow_sim.columns = ["flow"]
-
-    # --- Give the simulation dates:
-    flow_sim['date'] = pd.date_range(start=start_date, periods=len(flow_sim), freq='D')
-    flow_sim = flow_sim.set_index('date').shift(-1)
-    # ^^ The -1 removes the 1st flow, which is the flow before the simulation.
-
-    # --- Resize them to match
-    flows = flow_sim.merge(flow_rec, on="date")
-    # ^^ Merge removes the dates that don't coincide. Beware missing record data!
-
-    # Select the period for analysis (if given):
-    if period is not None:
-        if len(period) == 1:
-            flows = flows[flows.index >= period[0]]
-        if len(period) == 2:
-            flows = flows[(flows.index >= period[0]) & (flows.index <= period[1])]
-
-    # --- Do the comparison
-    flow_NAs = np.isnan(flows["discharge_vol"])  # The NAs are actually automatically removed
-
-    # Calculate the objective function:
-    obj_funs = {"NSE": np.round(he.evaluator(he.nse, flows["flow"], flows["discharge_vol"]), 2),
-                "KGE": np.round(he.evaluator(he.kge, flows["flow"], flows["discharge_vol"]), 2),
-                "RMSE": np.round(he.evaluator(he.rmse, flows["flow"], flows["discharge_vol"]), 2),
-                "PBias": np.round(he.evaluator(he.pbias, flows["flow"], flows["discharge_vol"]), 2)}
-
-    # Print out the % of data that are NA:
-    print(str(round(len(np.arange(len(flow_NAs))[flow_NAs]) / len(flows) * 100, 3)) + "% of comparison data are NA")
-
-    if (period is not None) & (return_period):
-        obj_funs["period"] = period
-
-    if return_flows:
-        obj_funs["flows"] = flows
-
-    return obj_funs
-
-
-# --- Sweep Files from Blades to Folder -----------------------
-def folder_copy(source_folder, destination_folder, overwrite=False, outputs_only=False, complete_only=False):
-    """
-    I:/SHETRAN_GB_2021/scripts/Blade_Sweeper.py" will execute this function for the Blades and CONVEX.
-
-    :param source_folder: E.g. "C:/BenSmith/Blade_SHETRANGB_OpenCLIM_UKCP18rcm_220708_APM/Temp_simulations/"
-    :param destination_folder: E.g. "I:/SHETRAN_GB_2021/UKCP18rcm_220708_APM_GB/"
-    :param overwrite: For if you want to overwrite the destination folder (False/True)
-    :param outputs_only: For if you only want to copy "outputs_..." files (False/True)
-    :param complete_only: For if you only want to copy completed files, based on PRI file (False/True)
-    :return: A list of copied files
-    """
-
-    # Check whether the destination folder exists (make it if not):
-    if not os.path.isdir(destination_folder):
-        os.mkdir(destination_folder)
-
-    # Get a list of the folders to copy:
-    files_2_copy = os.listdir(source_folder)
-
-    # Set conditions to skip incomplete simulations if desired:
-    if complete_only:
-        pri_file = [i for i in files_2_copy if i.endswith("pri.txt")]
-
-        # If there isn't a PRI file, skip the copy:
-        if len(pri_file) == 0:
-            return source_folder + " was not copied as it is incomplete."
-
-        # If there is, then check completeness:
-        with open(source_folder + pri_file[0], 'r') as f:
-            lines = f.read().split("\n")
-            comp_line = lines[-24]
-            if not comp_line.startswith("Normal completion of SHETRAN run:"):
-                # If incomplete, skip the copy, else continue:
-                return source_folder + " was not copied as it is incomplete."
-
-    # If NOT overwriting files, remove duplicates from source list:
-    if not overwrite:
-        destination_files = os.listdir(destination_folder)
-        files_2_copy = [i for i in files_2_copy if i not in destination_files]
-
-    # If you only want to copy outputs, only include these in the copy list:
-    if outputs_only:
-        files_2_copy = [i for i in files_2_copy if "output" in i]
-
-    # Copy each of the remaining files across:
-    if len(files_2_copy) > 0:
-        for file in files_2_copy:
-            shutil.copy2(source_folder + file, destination_folder + file)
-        return files_2_copy
-    else:
-        return "No files to copy..."
-
-
 # --- Get Date Components from a data string ------------------
 def get_date_components(date_string, fmt='%Y-%m-%d'):
     # "1980/01/01"
     date = datetime.datetime.strptime(date_string, fmt)
     return date.year, date.month, date.day
+
 

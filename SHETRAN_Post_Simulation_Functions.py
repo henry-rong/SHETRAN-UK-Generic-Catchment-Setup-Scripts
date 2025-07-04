@@ -212,14 +212,6 @@ def folder_copy(source_folder, destination_folder, overwrite=False, outputs_only
         return "No files to copy..."
 
 
-# # --- Get Date Components from a data string ------------------ Already in Master Functions
-# def get_date_components(date_string, fmt='%Y-%m-%d'):
-#     # "1980/01/01"
-#     date = datetime.datetime.strptime(date_string, fmt)
-#     return date.year, date.month, date.day
-
-
-# --- Load SHETRAN Regular Timestep Data ----------------------
 def get_lib_from_flow(discharge_filepath: str):
     """
     Function for extracting the model name from the discharge file path. Used in load_shetran_LibraryDate.
@@ -234,7 +226,7 @@ def get_lib_from_flow(discharge_filepath: str):
     return lib_path
 
 
-def get_library_date(filepath, start=True):
+def get_library_date(filepath, start=True, sepchar='/'):
     """
     :param filepath: String of the file path to the SHETRAN simulation library file.
     :param start: True or False depending on whether you want to edit the start or the end date
@@ -251,7 +243,7 @@ def get_library_date(filepath, start=True):
                 sm = line.split('>')[1].split('<')[0]
             if line.startswith(f"<{prefix}Year>"):
                 sy = line.split('>')[1].split('<')[0]
-        return f'{sd}/{sm}/{sy}'
+        return f'{sd}{sepchar}{sm}{sepchar}{sy}'
 
 
 # --- Load SHETRAN Regular Discharge File --------------------
@@ -339,7 +331,7 @@ def load_discharge_files(discharge_path, st=None):
 
 
 # --- Plot Flow Data Interactively -----------------------------
-def plot_flow_datasets(flow_path_list: dict, sim_start_date=None):
+def plot_flow_datasets(flow_path_list: dict, sim_start_date=None, Figure_input=None):
     """
     This will plot an interactive line plot of flow data from different (correctly formatted) sources.
     Example:
@@ -350,10 +342,14 @@ def plot_flow_datasets(flow_path_list: dict, sim_start_date=None):
         plot_flow_datasets(flow_path_list=paths)
     :param flow_path_list: Dictionary of labels and paths to SHETRAN _discharge_sim_regulartimestep files
             or other flow datasets.
+    :param Figure_input: a plotly Figure to be updated. If starting a new figure, leave as None / blank.
     :return:
+
+    TODO: Make an update to this where you can add new traces (so if you wanted to add data with different start dates.)
     """
-    # Set up figure:
-    fig = go.Figure()
+    # Set up figure either as fresh, or from the inputted figure:
+    fig = go.Figure() if Figure_input is None else Figure_input
+        
     # Run through each dictionary item.
     for sim_name, sim_data in flow_path_list.items():
         # Load the flow.
@@ -378,7 +374,7 @@ def load_shetran_regular_groundater_level(level_path, st=None):
         versions.
     st: start date (dd/mm/yyyy) used for loading the SHETRAN regular level file, which does not have date.
     """
-    level = pd.read_csv(level_path, skiprows=1, header=None)
+    level = pd.read_csv(level_path, skiprows=1, header=None, sep='\t|,', engine='python')
     level.columns = ["Date", "Level"]
     if st is None:
         # TODO - check why you have made this strange 12/1 date (UKCP18?).
@@ -391,20 +387,27 @@ def load_shetran_regular_groundater_level(level_path, st=None):
 # --- Load recorded Groundwater Level ------------------------
 def load_recorded_groundwater_level(level_path):
     """
-    This data should be a depth from ground surface.
+    This will read the first two columns of a csv containing groundwater levels.
+    If the timeseries data is in the 3rd column then this will not be returned.
+    The default should be assumed to be a depth from the surface, as this is what SHETRAN returns, but this
+    will load either depth or level without consideration of type.
     """
-    levels = pd.read_csv(level_path, parse_dates=[0], dayfirst=True, skiprows=1, header=None)
+    levels = pd.read_csv(level_path, parse_dates=[0], dayfirst=True, skiprows=1, header=None, usecols=[0,1])
     levels.columns = ['Date', 'Level']
     levels.set_index('Date', inplace=True)
     return levels
 
 
 # --- Load and prepare SHETRAN and recorded flow data ---------
-def load_groundwater_level_files(level_path, st=None):
+def load_groundwater_level_files(level_path, st=None, datum_adjustment=0):
     """
     Load in level data from SHETRAN or other sources
     :param level_path:
     :param st: start date (dd/mm/yyyy) used for loading the SHETRAN regular level file, which does not have date.
+    :param datum_adjustment: a float or integer representing the groundwater of a borehole. Give this if the GW data is
+            given as a level above a datum instead of a depth. The GW data will be deducted from this value to convert
+            from level to depth. If data is already a depth below ground surface then leave or specify as 0. Units
+            should match the data source (meter, feet etc.)
     :return :
     """
     if ('_regulartimestep' in level_path) or ('output_WaterTable_Element' in level_path):
@@ -413,6 +416,8 @@ def load_groundwater_level_files(level_path, st=None):
     else:
         print('Loading non-SHETRAN groundwater level data...')
         level = load_recorded_groundwater_level(level_path)
+        if float(datum_adjustment) != 0:
+            level.Level = float(datum_adjustment) - level.Level
     # else:
     #     print('Unsure which format to use...')
 
@@ -421,8 +426,17 @@ def load_groundwater_level_files(level_path, st=None):
 
 
 # --- Plot Groundwater Level Data Interactively ----------------
-def plot_groundwater_level_datasets(level_path_list: dict, sim_start_date=None):
+def plot_groundwater_level_datasets(level_path_list: dict, sim_start_date=None, datum_adjustment=0):
     """
+    :param level_path_list: Dictionary of labels and paths to SHETRAN output_watertable_element files
+            and recorded level (depth) datasets.
+    :param st: start date (dd/mm/yyyy) used for loading the SHETRAN regular level file, which does not have date.
+    :param datum_adjustment: a float or integer representing the groundwater of a borehole. Give this if the GW data is
+        given as a level above a datum instead of a depth. The GW data will be deducted from this value to convert
+        from level to depth. If data is already a depth below ground surface then leave or specify as 0. Units
+        should match the data source (meter, feet etc.)
+    :return:
+
     This will plot an interactive line plot of flow data from different (correctly formatted) sources.
     Example:
         paths = {
@@ -430,24 +444,25 @@ def plot_groundwater_level_datasets(level_path_list: dict, sim_start_date=None):
         'SHETRAN 69035': 'myfolder/Optimisation_Outputs/output_43018_GWlevel_sim_regulartimestep_No10.txt
         }
         plot_groundwater_level_datasets(level_path_list=paths)
-    :param level_path_list: Dictionary of labels and paths to SHETRAN output_watertable_element files
-            and recorded level (depth) datasets.
-    st: start date (dd/mm/yyyy) used for loading the SHETRAN regular level file, which does not have date.
-    :return:
     """
 
     # Set up figure:
     fig = go.Figure()
+
     # Run through each dictionary item.
     for sim_name, sim_data in level_path_list.items():
+
         # Load the flow.
-        level = load_groundwater_level_files(sim_data, st=sim_start_date)
+        level = load_groundwater_level_files(sim_data, st=sim_start_date, datum_adjustment=datum_adjustment)
+
         # Build the plot.
         fig.add_trace(go.Scatter(x=level.index, y=level.Level, name=sim_name, opacity=0.8))
+
     # Update layout properties:
     fig.layout['xaxis'] = dict(title=dict(text='Date'))
     fig.layout['yaxis'] = dict(title=dict(text='Groundwater Level (mbgl)'))
     fig.update_layout(title_text="Depth to Groundwater")
+
     # Flip the y-axis so that it looks like a depth and add a line at ground level:
     fig.update_yaxes(autorange="reversed")
     fig.add_hline(y=0)

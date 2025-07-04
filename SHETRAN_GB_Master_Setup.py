@@ -42,8 +42,12 @@ The code loads all climate data, cuts out the bit required for the catchment, an
 An attempt was made to speed this up by loading in all climate data first and then processing multiple catchments
 however this struggled with memory issues and was dropped.
 
+--- PARAMETERS:
+AE/PE at field capacity: for trees this is artificially high (1, but could be higher). This is because the evaporation
+    at the top of the canopy is high compared to grass at surface level, which is what the measurement of PET will be.
+
 --- MASKS:
-Masks should be .asc format
+Masks should be .asc  format, they can have .txt as a file name extension.
 Masks MUST align with the nearest unit of resolution! Else your climate data will be blank. For example:
     - 1000m masks should have extents rounded to the nearest 1000m;
     - 500m masks should have extents ending in 000 or 500 etc.
@@ -55,6 +59,12 @@ Mask paths used in multiprocessing will be:
 Masks MUST NOT have isolated cells / diagonally connected cells. This will stop the
 SHETRAN Prepare.exe script from setting up. Remove these manually (and check any
 corresponding cell maps). Later version of SHETRAN Prepare may correct for this issue.
+
+An efficient way of creating masks from a shapefile is to open them in QGIS, then use:
+1. Raster > Raster to Vector.
+    Set raster size units to geo-referenced units. width/height to desired resolution. CRS to BNG.
+    Extents as per constraints above. Burn in value = 0 and No data value = -9999.
+2. Raster > Convert Format. Set parameters as above and write as .asc file
 
 --- Resolution
 The models can currently be set up in four resolutions: 1000m, 500m, 200m and 100m, but this is easily adaptable.
@@ -95,19 +105,21 @@ TODO:
  - Update the climate input data to most current period.
  - Update the scripts so that they can take the UKCP18 data.
  - Update the scripts to include other functions (e.g. UKCP18).
- - Test the multiprocessing - this wasn't used in anger with
-   the historical runs, so check against UKCP18. Check q works.
+ - Test the multiprocessing - this wasn't used in anger with the historical runs, so check against UKCP18.
+    Check q works.
  - Add a mask checker to ensure that extents are rounded to the nearest resolution unit.
- - Consider that creating climate simulations with this will create
-   incorrect model durations, as SHETRAN runs on calendar years, but
-   climate years are only 360 days.
- - Load climate data in before running through catchments. As in 1a
-   Quickload of the UKCP setup. One experiment with this managed to
-   load all data and then cut it out, however the volume of data that
-   was read in prior to the cutting was waaaaaay too large, causing
-   python to crash.
+ - Consider that creating climate simulations with this will create incorrect model durations,
+    as SHETRAN runs on calendar years, but climate years are only 360 days.
+ - Load climate data in before running through catchments. As in 1a Quickload of the UKCP setup. One experiment with
+    this managed to load all data and then cut it out, however the volume of data that was read in prior to the cutting
+     was waaaaaay too large, causing python to crash.
  - Consider changing Vegetation_Details.csv to LandCover_details.csv
  - Update YML file on github.
+ - Use cProfile to explore bottlenecks in the code.
+ - Higher resolution grids may need a higher (or lower) strickler coefficient as there is more topographic variation.
+ - The Temp and PET data loads whole years, rather than just the months needed. Change this to speed it up.
+ - Recent PET data (>=2016) has latlong (or doesn't) and this differes from earlier data.
+    Fix code so that it can load 01/12/2015 to 01/02/2016.
 
 -------------------------------------------------------------
 """
@@ -125,31 +137,29 @@ import time
 # --- Set File Paths -------------------------------------------
 
 # Climate input folders:
-create_climate_data = True
-rainfall_input_folder = 'I:/CEH-GEAR downloads/'
-temperature_input_folder = 'I:/CHESS_T/'
-PET_input_folder = 'I:/CHESS/'
+create_climate_data = True  # [True/False]
+rainfall_input_folder = 'I:/HADUK/HADUK_precip_daily/' #  'I:/CEH-GEAR_rainfall_daily/'
+temperature_input_folder = 'I:/CHESS/CHESS_temperature_daily/'
+PET_input_folder = 'I:/CHESS/CHESS_PET_daily/'
 
 # Set Model periods (model will include given days): 'yyyy-mm-dd'
-start_time = '1980-01-01'
-end_time = '1980-12-31'
+start_time = '2015-10-20'
+end_time = '2016-01-15'
 
 # Model Resolution: This controls channel parameters in the Library file
-resolution = 200  # [Cell size in meters - options are: 1000, 500, 200, 100. Integer]
+resolution = 1000  # [Cell size in meters - options are: 1000, 500, 200, 100. Integer]
 
 # Static Input Data Folder:
-raw_input_folder = "I:/SHETRAN_GB_2021/02_Input_Data/00 - Raw ASCII inputs for SHETRAN UK/200m_v2/"
+raw_input_folder = "I:/SHETRAN_GB_2021/02_Input_Data/00 - Raw ASCII inputs for SHETRAN UK/1000m_v2/"  # (Set the number to the resolution)
 
 # --- Set Processing Methods -----------------------------------
-# PYRAMID = 'C:/Users/nbs65/Newcastle University/PYRAMID - General/WP3/02 SHETRAN Simulations/'
 process_single_catchment = dict(
     single=True,
-    simulation_name='7006_200m',
-    # mask_path="I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/7006_Mask.txt",
-    mask_path='S:/00 - Catchment Setups/Steve Birkinshaw/Catchment Masks/7006_Mask_200m.txt',
-    # mask_path="S:/09 - Upper Irwell - Asid Rehman/02 - SHETRAN Masks/Ogden_500m.asc",
-    # output_folder="S:/09 - Upper Irwell - Asid Rehman/03 - SHETRAN Models/Ogden_500m - test/")
-    output_folder="S:/00 - Catchment Setups/Steve Birkinshaw/7006_200m/")
+    simulation_name='4006',
+    mask_path= "I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/4006_Mask.txt",
+    # output_folder="I:/SHETRAN_GB_2021/04_Historical_Simulations/SHETRAN_UK_APM_Historical_HADUK/4006/")  # end with '/'
+    output_folder="I:/SHETRAN_GB_2021/04_Historical_Simulations/SHETRAN_UK_APM_Historical_HADUK/4006 TEST WITH RECENT DATA/")  # end with '/'
+    # output_folder="S:/02 - Python Optimiser/02_Simulations/PhD Simulations/43018/"
 
 # Choose Single / Multiprocessing:
 multiprocessing = dict(
@@ -221,7 +231,7 @@ if __name__ == "__main__":
 
     # --- Call Functions to Process a Single Catchment ------------
     if process_single_catchment["single"]:
-        print("Processing single catchment...")
+        print("Processing single catchment...", process_single_catchment["simulation_name"])
         SF.process_catchment(
             catch=process_single_catchment["simulation_name"],
             mask_path=process_single_catchment["mask_path"],
