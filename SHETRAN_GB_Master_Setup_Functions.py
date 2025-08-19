@@ -21,6 +21,7 @@
 
 # --- Load in Packages ----------------------------------------
 import os
+import time
 # import itertools
 import xarray as xr
 import pandas as pd
@@ -35,6 +36,8 @@ from rasterio.features import rasterize
 from scipy.ndimage import binary_fill_holes
 import warnings
 import shutil
+import subprocess
+from subprocess import Popen, PIPE, STDOUT
 
 # import hydroeval as he  # Slightly tricky to install needed for calculating objective functions
 # https://pypi.org/project/hydroeval/ - open conda prompt: pip install hydroeval
@@ -173,7 +176,6 @@ def get_soil_strings(orig_soil_types, new_soil_types, static_input_dataset):
     for orig_type, new_type in zip(orig_soil_types, new_soil_types):
         soil_props.loc[soil_props['Soil Category'] == orig_type, 'tmp0'] = new_type
     soil_props['Soil Category'] = soil_props['tmp0'].values
-    soil_props['Soil Category'] = soil_props['Soil Category'].astype(int)
 
     # Rename the soil types for the new format of shetran
     soil_props["New_Soil_Type"] = soil_props["Soil Type"].copy()
@@ -306,6 +308,20 @@ def create_library_file(
 
     with open(sim_output_folder + catch + "_LibraryFile.xml", "w") as f:
         f.write(output_string)
+
+
+def find_libraryfile_in_folder(folder_path):
+    """
+    Find the library file in the given folder path.
+    Returns the path to the library file if found, otherwise None.
+    """
+    for filename in os.listdir(folder_path):
+        # Return the library file name if it ends with ".xml" and contains "library"
+        if filename.endswith(".xml") and "library" in filename.lower():
+            return filename
+    # If no library file is found, return None
+    warnings.warn(f"No library file found in {folder_path}.")
+    return None
 
 
 def create_static_maps(static_input_dataset, xll, yll, ncols, nrows, cellsize,
@@ -919,3 +935,357 @@ def get_date_components(date_string, fmt='%Y-%m-%d'):
     return date.year, date.month, date.day
 
 
+# --- Edit the Visualisation Plan Prior to Simulation ----------
+# There are occasions where you may not want the default visualisation plan setup. This code is useful for
+# making clean edits of the file.
+def visualisation_plan_swap_line(old_line, new_line, file_in, file_out=None, strip_ws=True):
+    """
+    Take an existing line from the visualisation plan and replace it with a new one.
+    old_line & new_line  - Strings of the full lines in the visualisation plan (without white space,
+                            see strip_ws).
+    file_out             - Do not specify  if you want to overwrite.
+    strip_ws             - True/False depending on whether you want trailing white space to be matched and included
+                            in output. - Default True, so do not include white space in old line (and probably not new
+                             line, just for consistency).
+    ALSO, consider whether there are multiple matches.
+
+    TODO Make a replacement method based on line number instead of string matching.
+    """
+
+    if file_out is None:
+        file_out = file_in
+
+    with open(file_in, 'r') as vis:
+
+        replacement = ""
+        change_checker = 0
+
+        for line in vis:
+
+            if strip_ws:
+                line = line.rstrip()
+
+            changes = line.replace(old_line, new_line)
+
+            if line != changes:
+                change_checker += 1
+            replacement = replacement + changes + "\n"
+
+    with open(file_out, "w") as new_vis:
+        new_vis.write(replacement)
+
+    if change_checker == 0:
+        return "WARNING: No changes made"
+
+
+def visualisation_plan_remove_item(item_number, vis_file_in=str, vis_file_out=None):
+    """
+    Strip outputs from the visualisation plan based on their number.
+    If you use this in combination with the number altering, that you need to match the altered number.
+    If you are removing multiple items, remove the higher numbers first. E.g.
+        for n in [6, 5, 4, 3, 1]:
+            visualisation_plan_remove_item(item_number=n, vis_file_in=vis_plan_filepath)
+    :param item_number: string or integer relating to item number (e.g. NUMBER^1)
+    :param vis_file_in: string filepath to the visualisation plan.
+    :param vis_file_out: string filepath to an output if you want this to differ from the original.
+    :return: a new visualisation plan, overwriting the original unless specified.
+    """
+
+    if vis_file_out is None:
+        vis_file_out = vis_file_in
+
+    with open(vis_file_in, 'r') as vis:
+        updated_text = ""
+        number_corrector = 0
+        changes_made = False
+
+        for line in vis:
+            line = line.strip().split(" : ")
+
+            # # IF the line starts with item then skip ('item' will be written later)
+            if line[0].startswith("item"):
+                continue
+
+            # IF the line starts with NUMBER, decide whether to read or write:
+            # if line[0][0:len(line[0]) - 2] == "NUMBER":
+            if line[0].startswith('NUMBER'):
+
+                # # IF it is the number of interest read the next line too, not writing either
+                # # and add one to the index corrector:
+                # if line[0][-1] == str(item_number):
+                if line[0].startswith(f'NUMBER^{str(item_number)}'):
+                    next(vis)
+                    number_corrector += 1
+                    changes_made = True
+
+                # IF a different number:
+                else:
+                    new_number = int(line[0][-1]) - number_corrector
+                    line[0] = str(line[0][0:len(line[0]) - 1] + str(new_number))
+                    updated_text = updated_text + 'item \n' + " : ".join(line) + "\n" + next(vis)
+
+            # If neither, just copy the line:
+            else:
+                updated_text = updated_text + " : ".join(line) + "\n"
+
+    with open(vis_file_out, "w") as new_vis:
+        new_vis.write(updated_text)
+
+    if not changes_made:
+        return "WARNING: No lines were edited"
+
+
+def clean_visualisation_plan(vis_plan_filepath):  # , clear_level=False
+
+    # if clear_level:
+    #     for n in [6, 5, 4, 3, 2, 1]:
+    #         visualisation_plan_remove_item(item_number=n, vis_file_in=vis_plan_filepath)
+    # else:
+    for n in [6, 5, 4, 3, 1]:
+        visualisation_plan_remove_item(item_number=n, vis_file_in=vis_plan_filepath)
+
+    visualisation_plan_swap_line(old_line="GRID_OR_LIST_NO^7 : TIMES^8 : ENDITEM",
+                                 new_line="GRID_OR_LIST_NO^7 : TIMES^9 : ENDITEM",
+                                 file_in=vis_plan_filepath)
+
+    visualisation_plan_swap_line(
+        old_line="NUMBER^1 : NAME^ph_depth : BASIS^grid_as_grid : SCOPE^squares :  EXTRA_DIMENSIONS^none",
+        new_line="NUMBER^1 : NAME^ph_depth : BASIS^grid_as_list : SCOPE^squares :  EXTRA_DIMENSIONS^none",
+        file_in=vis_plan_filepath)
+
+
+# --- Edit RunData File ----------------------------------------
+def edit_RunData_line(rundata_filepath, element_number, description, filename):  # , entry
+    """
+    Sometimes we may want to add or change the content of the rundata file (between preparing and running the simulation
+    For example if we want to add a baseflow file or additional discharge outputs.
+    :param rundata_filepath: string filepath to the rundata file.
+    :param element_number: Str or int of the line number that will be edited. E.g.
+                            35 for >> 35: column base flow boundary condition (BFB).
+    :param description: String of what follows the element number, e.g. 'column base flow boundary condition (BFB)'
+    :param filename: String with the filename of the new entry.
+    :param entry: String for the new entry. NO LONGER USED.
+    :return: will overwrite the rundata file with the new entry.
+    """
+    ## OLDER VERSION
+    # # Read file in read mode 'r'
+    # with open(rundata_filepath, 'r') as file:
+    #     lines = file.readlines()
+    #
+    # # Run through the contents and overwrite the relevant line with the new content, else write the existing line:
+    # with open(rundata_filepath, 'w') as file:
+    #     for line in lines:
+    #         if line.startswith(str(element_number) + ":"):
+    #             file.writelines(line)
+    #             file.writelines(entry)  # This must not have an empty line beneath it.
+    #         else:
+    #             file.writelines(line)
+
+    # Read the file contents:
+    with open(rundata_filepath, 'r') as file:
+        lines = file.readlines()
+
+    # Handle and store the header/title line
+    header = lines[0].rstrip('\n')
+    lines = lines[1:]
+
+    # Create a list of tuples for easier manipulation (element_number, description, filename)
+    entries = []
+    i = 0
+    while i < len(lines):
+        if ":" in lines[i]:
+            try:
+                num = int(lines[i].split(":")[0])
+                desc = lines[i].strip()
+                fname = lines[i + 1].strip()
+                entries.append((num, desc, fname))
+                i += 2
+            except (ValueError, IndexError):
+                i += 1  # Skip malformed block
+        else:
+            i += 1
+
+    # Replace or insert the new element
+    found = False
+    for idx, (num, _, _) in enumerate(entries):
+        if num == element_number:
+            entries[idx] = (element_number, f"{element_number}: {description}", filename)
+            found = True
+            break
+
+    if not found:
+        entries.append((element_number, f"{element_number}: {description}", filename))
+        entries.sort(key=lambda x: x[0])  # Keep entries ordered by element number
+
+    # Write back to file
+    with open(rundata_filepath, 'w') as file:
+        file.write(header + '\n')  # Write the preserved header
+        for _, desc, fname in entries:
+            file.write(desc + '\n')
+            file.write(fname + '\n')
+
+
+# --- Copy Folder Function --------------------------------------
+def folder_copy(source_folder, destination_folder, overwrite=False):
+    """
+    Copies files from source_folder to destination_folder.
+    :param source_folder: The folder from which files will be copied.
+    :param destination_folder: The folder to which files will be copied.
+    :param overwrite: If True, existing files in the destination folder will be overwritten.
+    :return: A list of files that were copied.
+    """
+    
+    if not os.path.isdir(destination_folder):
+        os.makedirs(destination_folder, exist_ok=True)
+
+    files_2_copy = os.listdir(source_folder)
+
+    if not overwrite:
+        destination_files = os.listdir(destination_folder)
+        files_2_copy = [i for i in files_2_copy if i not in destination_files]
+
+    for file in files_2_copy:
+        src_path = os.path.join(source_folder, file)
+        dst_path = os.path.join(destination_folder, file)
+        if os.path.isfile(src_path):
+            shutil.copy2(src_path, dst_path)
+        elif os.path.isdir(src_path):
+            if not os.path.exists(dst_path):
+                shutil.copytree(src_path, dst_path)
+
+    return files_2_copy
+
+
+# --- Get rundata file name from library file name ----------------
+def get_rundata_name_from_LibraryFile(library_path):
+    """
+    Use the library file name to get a rundata file name.
+    """
+    lib_name = os.path.split(library_path)[-1]
+    sim_name = lib_name.split('_Library')[0]
+    run_name = f'rundata_{sim_name}.txt'
+    return run_name
+    
+
+# --- Run SHETRAN with Skip Pause Function -------------------
+def run_SHETRAN_skip_pause(exe_filepath, rundata_filepath, print_timestep=True, force_continue=False):
+    """
+    The following code can be used to run SHETRAN through python in such away that any issues with the model will be
+    skipped over. This is useful when trying to run the model lots of times, such as during an optimisation when a
+    failed model is not important but a paused script is.
+    :param exe_filepath: file path of the SHETRAN.exe executable
+    :param rundata_filepath: file path to the run data file
+    :param print_timestep: TRUE/FALSE - this is modely useful for troubleshooting, else it will fill the console.
+    :param force_continue: TRUE/FALSE - use according to whether you wish to skip any FORTRAN Pauses or Errors.
+    :return:
+    """
+    if not force_continue:
+        subprocess.call([exe_filepath, '-f ', rundata_filepath])
+        return True
+    else:
+        successful_simulation = True
+        # Run the exe, passing outputs and errors to process so that they can be monitored
+        with Popen([exe_filepath, '-f ', rundata_filepath], stdout=PIPE, stderr=STDOUT, text=True) as process:  # stdin=PIPE
+            while successful_simulation:
+                out = process.stdout.readline().lstrip()  # .decode('utf-8')
+
+                # If user wants the timestep to be printed, print the output:
+                if print_timestep:
+                    print(out)
+
+                # Catch SHETRAN Pauses and skip to the next simulation:
+                if out.startswith("Fortran Pause"):
+                    print('\n"FORTRAN PAUSE" detected. Exiting simulation.', flush=True, end="\n")
+                    successful_simulation = False
+                    process.kill()
+                    break  # process.terminate() # process.communicate('\n') # process.****()
+
+                # Catch Fortran Errors and skip to the next simulation:
+                if out.startswith("forrtl"):  # or out.startswith('forrtl')
+                    print(f'\n Error detected. Exiting simulation. Error: \n {out}', flush=True, end="\n")
+                    successful_simulation = False
+                    process.kill()
+                    break
+
+                # Once finished, move on to the analysis:
+                if out.startswith('ABNORMAL END'):
+                    successful_simulation = False
+                    process.kill()
+                    break
+
+                # Once finished, move on to the analysis:
+                if out.startswith('Normal completion'):
+                    break
+
+        return successful_simulation
+
+
+# --- Run SHETRAN Prepare and Execute Simulation ---------------
+def simple_run_simulation(software_path, library_path, prepare_executable='shetran-prepare-snow.exe', shetran_executable='shetran.exe'):
+    """
+    This function will run the SHETRAN prepare and then run the simulation.
+    It is a simple wrapper around the SHETRAN prepare and run functions.
+
+    It assumes that the shetran-prepare-snow.exe is in the software_path and that the library_path is correct.
+    It also assumes that the shetran.exe is in the software_path.
+    :param software_path: The path to the SHETRAN software folder.
+    :param library_path: The path to the SHETRAN library file.
+    :param prepare_executable: The name of the SHETRAN prepare executable, including .exe.
+    :param shetran_executable: The name of the SHETRAN executable, including .exe.
+    """
+    # Prepare the simulation using the library file:
+    subprocess.call([software_path + prepare_executable, library_path])
+
+    # Get the rundata file name from the library file path:
+    run_path = os.path.join(os.path.split(library_path)[0], get_rundata_name_from_LibraryFile(library_path))
+    
+    # Change to the software path and run the simulation:
+    os.chdir(software_path)
+    run_SHETRAN_skip_pause(exe_filepath=shetran_executable, rundata_filepath=run_path,
+                           print_timestep=False, force_continue=True)
+
+
+def Run_SHETRAN_Simulations_in_Parallel(catchment_list, simulation_source_folder, 
+                                        software_path, prepare_executable='shetran-prepare-snow.exe', shetran_executable='shetran.exe', 
+                                        num_processes=10):
+    """
+    Was called run_SHETRAN_batch_with_copy_mp.
+    This function will run SHETRAN simulations in parallel for a list of catchments.
+
+    Multiprocessing requires this function to be executed within a main block, so it is not called directly (if __name__ == "__main__":)
+    :param catchment_list: A list of catchments to run the simulations for (these should be folder names).
+    :param simulation_source_folder: The folder where these SHETRAN simulations are stored.
+    :param num_processes: The number of processes to use for parallel processing.
+    simulation_subfolder: This is a relic from the UKCP18 run script (which was made after the initial Historical APM
+                          run script, but then used here for the remaining Historical runs). In that instance it was
+                          used to define the different RCP groups, but is no longer needed. As such, it is left for
+                          flexibility, but left as None. You can use it if you need to specify subgroups within the
+                          simulation source folder [type=Str].
+    """
+
+    # Set up the multiprocessing pool and queue:
+    manager = mp.Manager()
+    q = manager.Queue()
+    pool = mp.Pool(num_processes)
+
+    # logger = pool.apply_async(log_progress, (q,))
+
+    # Create a list of jobs to run in parallel:
+    jobs = []
+
+    # Run through the catchments in the catchment list, applying the SHETRAN copy and run function:
+    for catchment in catchment_list:
+
+        library_path = find_libraryfile_in_folder(os.path.join(simulation_source_folder, catchment))
+
+        job = pool.apply_async(simple_run_simulation, (software_path, library_path, prepare_executable, shetran_executable))
+        # Arguments used above are: software_path, library_path, prepare_executable='shetran-prepare-snow.exe', shetran_executable='shetran.exe'
+
+        jobs.append(job)
+
+    for job in jobs:
+        job.get()
+
+    q.put('kill')
+    pool.close()
+    pool.join()

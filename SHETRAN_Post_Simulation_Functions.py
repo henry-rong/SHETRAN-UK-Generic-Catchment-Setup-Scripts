@@ -21,18 +21,16 @@ import os
 import shutil
 import pandas as pd
 import numpy as np
-import datetime
 import hydroeval as he  # https://pypi.org/project/hydroeval/ - open conda prompt: pip install hydroeval
 import plotly.graph_objects as go
-import subprocess
-from subprocess import Popen, PIPE, STDOUT
+
 
 
 # --- Calculate Objective Functions for Flows -----------------
 def obj_functions(recorded_timeseries,
                   simulated_timeseries,
-                  return_flows=False,
-                  period: list = None):
+                  period: list = None,
+                  return_flows=False):
     """
     Notes:
     - Assumes daily flow data, can be altered within function.
@@ -80,82 +78,84 @@ def obj_functions(recorded_timeseries,
     return performance_df
 
 
-# def shetran_obj_functions(regular_simulation_discharge_path: str,
-#                           recorded_timeseries_path: str,
-#                           start_date: str,
-#                           period: list = None,
-#                           recorded_date_discharge_columns: list = None,
-#                           return_flows=False, return_period=False):
-#     """
-#     Notes:
-#     - Assumes daily flow data, can be altered within function.
-#     - Assumes that recorded flows have dates and are regularly spaced, with no gaps.
-#     - NAs will be skipped from the analysis. NA count will be returned.
-#     - A more updated version of this function has been copied above.
-#
-#     regular_simulation_discharge_path:  Path to the txt file
-#     recorded_timeseries_path:            Path to the csv file
-#     start_date:                         The start date of the simulated flows: "DD-MM-YYYY"
-#     period:                             The period to use (i.e. calibration/validation) as a list of dates:
-#                                         ["YYY-MM-DD", "YYY-MM-DD"].
-#                                         Leave blank if you want to use the whole thing.
-#                                         Leave as single item in list if you want to use until the end of the data.
-#     recorded_date_discharge_columns:    The columns (as a list) that contain the date and then flow data.
-#     RETURNS:                            The NSE value as an array.
-#     """
-#
-#     # --- Read in the flows for Sim and Rec:
-#     if recorded_date_discharge_columns is None:
-#         recorded_date_discharge_columns = ["date", "discharge_vol"]
-#
-#     flow_rec = pd.read_csv(recorded_timeseries_path,
-#                            usecols=recorded_date_discharge_columns,
-#                            parse_dates=[recorded_date_discharge_columns[0]])
-#
-#     # Set the columns to the following so that they are always correctly referenced:
-#     # (Do not use recorded_date_discharge_columns!)
-#     flow_rec.columns = ["date", "discharge_vol"]
-#     flow_rec = flow_rec.set_index('date')
-#
-#     # Read in the simulated flows:
-#     flow_sim = pd.read_csv(regular_simulation_discharge_path)
-#     flow_sim.columns = ["flow"]
-#
-#     # --- Give the simulation dates:
-#     flow_sim['date'] = pd.date_range(start=start_date, periods=len(flow_sim), freq='D')
-#     flow_sim = flow_sim.set_index('date').shift(-1)
-#     # ^^ The -1 removes the 1st flow, which is the flow before the simulation.
-#
-#     # --- Resize them to match
-#     flows = flow_sim.merge(flow_rec, on="date")
-#     # ^^ Merge removes the dates that don't coincide. Beware missing record data!
-#
-#     # Select the period for analysis (if given):
-#     if period is not None:
-#         if len(period) == 1:
-#             flows = flows[flows.index >= period[0]]
-#         if len(period) == 2:
-#             flows = flows[(flows.index >= period[0]) & (flows.index <= period[1])]
-#
-#     # --- Do the comparison
-#     flow_NAs = np.isnan(flows["discharge_vol"])  # The NAs are actually automatically removed
-#
-#     # Calculate the objective function:
-#     obj_funs = {"NSE": np.round(he.evaluator(he.nse, flows["flow"], flows["discharge_vol"]), 2),
-#                 "KGE": np.round(he.evaluator(he.kge, flows["flow"], flows["discharge_vol"]), 2),
-#                 "RMSE": np.round(he.evaluator(he.rmse, flows["flow"], flows["discharge_vol"]), 2),
-#                 "PBias": np.round(he.evaluator(he.pbias, flows["flow"], flows["discharge_vol"]), 2)}
-#
-#     # Print out the % of data that are NA:
-#     print(str(round(len(np.arange(len(flow_NAs))[flow_NAs]) / len(flows) * 100, 3)) + "% of comparison data are NA")
-#
-#     if (period is not None) & (return_period):
-#         obj_funs["period"] = period
-#
-#     if return_flows:
-#         obj_funs["flows"] = flows
-#
-#     return obj_funs
+'''
+def shetran_obj_functions(regular_simulation_discharge_path: str,
+                          recorded_timeseries_path: str,
+                          start_date: str,
+                          period: list = None,
+                          recorded_date_discharge_columns: list = None,
+                          return_flows=False, return_period=False):
+    """
+    Notes:
+    - Assumes daily flow data, can be altered within function.
+    - Assumes that recorded flows have dates and are regularly spaced, with no gaps.
+    - NAs will be skipped from the analysis. NA count will be returned.
+    - A more updated version of this function has been copied above.
+
+    regular_simulation_discharge_path:  Path to the txt file
+    recorded_timeseries_path:            Path to the csv file
+    start_date:                         The start date of the simulated flows: "DD-MM-YYYY"
+    period:                             The period to use (i.e. calibration/validation) as a list of dates:
+                                        ["YYY-MM-DD", "YYY-MM-DD"].
+                                        Leave blank if you want to use the whole thing.
+                                        Leave as single item in list if you want to use until the end of the data.
+    recorded_date_discharge_columns:    The columns (as a list) that contain the date and then flow data.
+    RETURNS:                            The NSE value as an array.
+    """
+
+    # --- Read in the flows for Sim and Rec:
+    if recorded_date_discharge_columns is None:
+        recorded_date_discharge_columns = ["date", "discharge_vol"]
+
+    flow_rec = pd.read_csv(recorded_timeseries_path,
+                           usecols=recorded_date_discharge_columns,
+                           parse_dates=[recorded_date_discharge_columns[0]])
+
+    # Set the columns to the following so that they are always correctly referenced:
+    # (Do not use recorded_date_discharge_columns!)
+    flow_rec.columns = ["date", "discharge_vol"]
+    flow_rec = flow_rec.set_index('date')
+
+    # Read in the simulated flows:
+    flow_sim = pd.read_csv(regular_simulation_discharge_path)
+    flow_sim.columns = ["flow"]
+
+    # --- Give the simulation dates:
+    flow_sim['date'] = pd.date_range(start=start_date, periods=len(flow_sim), freq='D')
+    flow_sim = flow_sim.set_index('date').shift(-1)
+    # ^^ The -1 removes the 1st flow, which is the flow before the simulation.
+
+    # --- Resize them to match
+    flows = flow_sim.merge(flow_rec, on="date")
+    # ^^ Merge removes the dates that don't coincide. Beware missing record data!
+
+    # Select the period for analysis (if given):
+    if period is not None:
+        if len(period) == 1:
+            flows = flows[flows.index >= period[0]]
+        if len(period) == 2:
+            flows = flows[(flows.index >= period[0]) & (flows.index <= period[1])]
+
+    # --- Do the comparison
+    flow_NAs = np.isnan(flows["discharge_vol"])  # The NAs are actually automatically removed
+
+    # Calculate the objective function:
+    obj_funs = {"NSE": np.round(he.evaluator(he.nse, flows["flow"], flows["discharge_vol"]), 2),
+                "KGE": np.round(he.evaluator(he.kge, flows["flow"], flows["discharge_vol"]), 2),
+                "RMSE": np.round(he.evaluator(he.rmse, flows["flow"], flows["discharge_vol"]), 2),
+                "PBias": np.round(he.evaluator(he.pbias, flows["flow"], flows["discharge_vol"]), 2)}
+
+    # Print out the % of data that are NA:
+    print(str(round(len(np.arange(len(flow_NAs))[flow_NAs]) / len(flows) * 100, 3)) + "% of comparison data are NA")
+
+    if (period is not None) & (return_period):
+        obj_funs["period"] = period
+
+    if return_flows:
+        obj_funs["flows"] = flows
+
+    return obj_funs
+'''
 
 
 # --- Sweep Files from Blades to Folder -----------------------
@@ -218,11 +218,19 @@ def get_lib_from_flow(discharge_filepath: str):
     :param discharge_filepath:  String of the file path to the SHETRAN output discharge_sim_regulartimestep.
     :return: The filepath to the model library file (assuming typical naming convention.
     """
-    fp_split = discharge_filepath.split('/')
-    fname = fp_split[-1].split('discharge_sim_regulartimestep')[0]
-    fname_ext = fp_split[-1].split('discharge_sim_regulartimestep')[1]
-    fname_ext = fname_ext[0:-4] if len(fname_ext) > 0 else ''
-    lib_path = '/'.join(fp_split[0:-1]) + f'/{fname[7:]}LibraryFile{fname_ext}.xml'
+    # Split the filepath into the directory and the file name:
+    f_path = os.path.dirname(discharge_filepath)
+    f_name = os.path.basename(discharge_filepath)
+
+    # Remove the standard text from the string to get the simulation name:
+    name = f_name.split('_discharge_sim_regulartimestep')[0].replace('output_', '')
+
+    # If there is an additional part to the name then store it:
+    name_sufix = f_name.split('_discharge_sim_regulartimestep')[1].replace('.txt', '')
+
+    # Reconstruct the library file path:
+    lib_path = os.path.join(f_path, f'{name}_LibraryFile{name_sufix}.xml')
+
     return lib_path
 
 
@@ -274,6 +282,7 @@ def load_shetran_discharge(flow_path: str, simulation_start_date=None, discharge
         try:
             # See whether there is a library file with a date in it and use that:
             lib_name = get_lib_from_flow(flow_path)
+            # print(lib_name)
             simulation_start_date = get_library_date(lib_name)
         except:
             # If not Library file, use a default date. December 1980 for long UKCP18 scenarios, else Jan 1980.
@@ -288,7 +297,7 @@ def load_shetran_discharge(flow_path: str, simulation_start_date=None, discharge
 
     # Build the flow dataframe
     flow.index = pd.date_range(start=pd.to_datetime(simulation_start_date, dayfirst=True),
-                               periods=len(flow), freq=f'{timestep}H')
+                               periods=len(flow), freq=f'{timestep}h')
     flow.index.name = "Date"
     flow.columns = ["Flow"]
     return flow
@@ -301,12 +310,28 @@ def load_discharge(flow_path: str):
     :param flow_path: String of path to the csv file.
     :return:
     """
-    flow = pd.read_csv(flow_path, sep='\t|,', parse_dates=[0], dayfirst=True, engine='python', skiprows=1)
+    # Check how many columns are in the file: (the formatted files that we use have two columns but the CAMELS dataset have 11, of which Dicharge_Vol is the 6th column)
+    column_check = pd.read_csv(flow_path, sep='\t|,', parse_dates=[0], dayfirst=True, engine='python', skiprows=1, nrows=1)
+    
+    # If there are 11 columns then assume it is CAMELS:
+    if column_check.shape[1] == 11:
+        flow = pd.read_csv(flow_path, sep='\t|,', parse_dates=[0], dayfirst=True, engine='python', usecols=[0, 5])
+        if 'discharge_vol' not in flow.columns:
+            raise ValueError(
+                "The dataset was expected to be a CAMELS dataset with 11 columns. " \
+                    "The CAMELS column 'discharge_vol' was not found and so the datasource is uncertain. " \
+                    "Check the data source matches what you expect (ideally 2 columns: Date and Flow).")
+    
+    # If not then assume it is a standard two-column file:
+    else:
+        flow = pd.read_csv(flow_path, sep='\t|,', parse_dates=[0], dayfirst=True, engine='python', skiprows=1)
+
     # Rename the columns if needed (assuming the first column contains dates and the second column contains values)
     flow.columns = ['Date', 'Flow']
     # Set the 'Date' column as the index
     flow.set_index('Date', inplace=True)
-    flow['Flow'][flow['Flow'] < 0] = np.nan
+    # flow['Flow'][flow['Flow'] < 0] = np.nan  # Old, use below instead.
+    flow.loc[flow['Flow'] < 0, 'Flow'] = np.nan
     return flow
 
 
@@ -315,6 +340,7 @@ def load_discharge_files(discharge_path, st=None):
     """
     Load in discharge data from SHETRAN or other sources
     :param discharge_path:
+    :param st: start date (dd/mm/yyyy) used for loading the SHETRAN regular discharge file, which does not have date.
     :return:
     """
     if '_discharge_sim_regulartimestep' in discharge_path:
@@ -470,247 +496,6 @@ def plot_groundwater_level_datasets(level_path_list: dict, sim_start_date=None, 
     return fig
 
 
-# --- Edit the Visualisation Plan Prior to Simulation ----------
-# There are occasions where you may not want the default visualisation plan setup. This code is useful for
-# making clean edits of the file.
-def visualisation_plan_swap_line(old_line, new_line, file_in, file_out=None, strip_ws=True):
-    """
-    Take an existing line from the visualisation plan and replace it with a new one.
-    old_line & new_line  - Strings of the full lines in the visualisation plan (without white space,
-                            see strip_ws).
-    file_out             - Do not specify  if you want to overwrite.
-    strip_ws             - True/False depending on whether you want trailing white space to be matched and included
-                            in output. - Default True, so do not include white space in old line (and probably not new
-                             line, just for consistency).
-    ALSO, consider whether there are multiple matches.
-
-    TODO Make a replacement method based on line number instead of string matching.
-    """
-
-    if file_out is None:
-        file_out = file_in
-
-    with open(file_in, 'r') as vis:
-
-        replacement = ""
-        change_checker = 0
-
-        for line in vis:
-
-            if strip_ws:
-                line = line.rstrip()
-
-            changes = line.replace(old_line, new_line)
-
-            if line != changes:
-                change_checker += 1
-            replacement = replacement + changes + "\n"
-
-    with open(file_out, "w") as new_vis:
-        new_vis.write(replacement)
-
-    if change_checker == 0:
-        return "WARNING: No changes made"
-
-
-def visualisation_plan_remove_item(item_number, vis_file_in=str, vis_file_out=None):
-    """
-    Strip outputs from the visualisation plan based on their number.
-    If you use this in combination with the number altering, that you need to match the altered number.
-    If you are removing multiple items, remove the higher numbers first. E.g.
-        for n in [6, 5, 4, 3, 1]:
-            visualisation_plan_remove_item(item_number=n, vis_file_in=vis_plan_filepath)
-    :param item_number: string or integer relating to item number (e.g. NUMBER^1)
-    :param vis_file_in: string filepath to the visualisation plan.
-    :param vis_file_out: string filepath to an output if you want this to differ from the original.
-    :return: a new visualisation plan, overwriting the original unless specified.
-    """
-
-    if vis_file_out is None:
-        vis_file_out = vis_file_in
-
-    with open(vis_file_in, 'r') as vis:
-        updated_text = ""
-        number_corrector = 0
-        changes_made = False
-
-        for line in vis:
-            line = line.strip().split(" : ")
-
-            # # IF the line starts with item then skip ('item' will be written later)
-            if line[0].startswith("item"):
-                continue
-
-            # IF the line starts with NUMBER, decide whether to read or write:
-            # if line[0][0:len(line[0]) - 2] == "NUMBER":
-            if line[0].startswith('NUMBER'):
-
-                # # IF it is the number of interest read the next line too, not writing either
-                # # and add one to the index corrector:
-                # if line[0][-1] == str(item_number):
-                if line[0].startswith(f'NUMBER^{str(item_number)}'):
-                    next(vis)
-                    number_corrector += 1
-                    changes_made = True
-
-                # IF a different number:
-                else:
-                    new_number = int(line[0][-1]) - number_corrector
-                    line[0] = str(line[0][0:len(line[0]) - 1] + str(new_number))
-                    updated_text = updated_text + 'item \n' + " : ".join(line) + "\n" + next(vis)
-
-            # If neither, just copy the line:
-            else:
-                updated_text = updated_text + " : ".join(line) + "\n"
-
-    with open(vis_file_out, "w") as new_vis:
-        new_vis.write(updated_text)
-
-    if not changes_made:
-        return "WARNING: No lines were edited"
-
-
-def clean_visualisation_plan(vis_plan_filepath):  # , clear_level=False
-
-    # if clear_level:
-    #     for n in [6, 5, 4, 3, 2, 1]:
-    #         visualisation_plan_remove_item(item_number=n, vis_file_in=vis_plan_filepath)
-    # else:
-    for n in [6, 5, 4, 3, 1]:
-        visualisation_plan_remove_item(item_number=n, vis_file_in=vis_plan_filepath)
-
-    visualisation_plan_swap_line(old_line="GRID_OR_LIST_NO^7 : TIMES^8 : ENDITEM",
-                                 new_line="GRID_OR_LIST_NO^7 : TIMES^9 : ENDITEM",
-                                 file_in=vis_plan_filepath)
-
-    visualisation_plan_swap_line(
-        old_line="NUMBER^1 : NAME^ph_depth : BASIS^grid_as_grid : SCOPE^squares :  EXTRA_DIMENSIONS^none",
-        new_line="NUMBER^1 : NAME^ph_depth : BASIS^grid_as_list : SCOPE^squares :  EXTRA_DIMENSIONS^none",
-        file_in=vis_plan_filepath)
-
-
-# --- Edit RunData File ----------------------------------------
-def edit_RunData_line(rundata_filepath, element_number, description, filename):  # , entry
-    """
-    Sometimes we may want to add or change the content of the rundata file (between preparing and running the simulation
-    For example if we want to add a baseflow file or additional discharge outputs.
-    :param rundata_filepath: string filepath to the rundata file.
-    :param element_number: Str or int of the line number that will be edited. E.g.
-                            35 for >> 35: column base flow boundary condition (BFB).
-    :param description: String of what follows the element number, e.g. 'column base flow boundary condition (BFB)'
-    :param filename: String with the filename of the new entry.
-    :param entry: String for the new entry. NO LONGER USED.
-    :return: will overwrite the rundata file with the new entry.
-    """
-    ## OLDER VERSION
-    # # Read file in read mode 'r'
-    # with open(rundata_filepath, 'r') as file:
-    #     lines = file.readlines()
-    #
-    # # Run through the contents and overwrite the relevant line with the new content, else write the existing line:
-    # with open(rundata_filepath, 'w') as file:
-    #     for line in lines:
-    #         if line.startswith(str(element_number) + ":"):
-    #             file.writelines(line)
-    #             file.writelines(entry)  # This must not have an empty line beneath it.
-    #         else:
-    #             file.writelines(line)
-
-    # Read the file contents:
-    with open(rundata_filepath, 'r') as file:
-        lines = file.readlines()
-
-    # Handle and store the header/title line
-    header = lines[0].rstrip('\n')
-    lines = lines[1:]
-
-    # Create a list of tuples for easier manipulation (element_number, description, filename)
-    entries = []
-    i = 0
-    while i < len(lines):
-        if ":" in lines[i]:
-            try:
-                num = int(lines[i].split(":")[0])
-                desc = lines[i].strip()
-                fname = lines[i + 1].strip()
-                entries.append((num, desc, fname))
-                i += 2
-            except (ValueError, IndexError):
-                i += 1  # Skip malformed block
-        else:
-            i += 1
-
-    # Replace or insert the new element
-    found = False
-    for idx, (num, _, _) in enumerate(entries):
-        if num == element_number:
-            entries[idx] = (element_number, f"{element_number}: {description}", filename)
-            found = True
-            break
-
-    if not found:
-        entries.append((element_number, f"{element_number}: {description}", filename))
-        entries.sort(key=lambda x: x[0])  # Keep entries ordered by element number
-
-    # Write back to file
-    with open(rundata_filepath, 'w') as file:
-        file.write(header + '\n')  # Write the preserved header
-        for _, desc, fname in entries:
-            file.write(desc + '\n')
-            file.write(fname + '\n')
-
-
-# --- Run SHETRAN Through Python Skipping Errors ---------------
-def run_SHETRAN_skip_pause(exe_filepath, rundata_filepath, print_timestep=True, force_continue=False):
-    """
-    The following code can be used to run SHETRAN through python in such away that any issues with the model will be
-    skipped over. This is useful when trying to run the model lots of times, such as during an optimisation when a
-    failed model is not important but a paused script is.
-    :param exe_filepath: file path of the SHETRAN.exe executable
-    :param rundata_filepath: file path to the run data file
-    :param print_timestep: TRUE/FALSE - this is modely useful for troubleshooting, else it will fill the console.
-    :param force_continue: TRUE/FALSE - use according to whether you wish to skip any FORTRAN Pauses or Errors.
-    :return:
-    """
-    if not force_continue:
-        subprocess.call([exe_filepath, '-f ', rundata_filepath])
-        return True
-    else:
-        successful_simulation = True
-        # Run the exe, passing outputs and errors to process so that they can be monitored
-        with Popen([exe_filepath, '-f ', rundata_filepath], stdout=PIPE, stderr=STDOUT, text=True) as process:  # stdin=PIPE
-            while successful_simulation:
-                out = process.stdout.readline().lstrip()  # .decode('utf-8')
-
-                # If user wants the timestep to be printed, print the output:
-                if print_timestep:
-                    print(out)
-
-                # Catch SHETRAN Pauses and skip to the next simulation:
-                if out.startswith("Fortran Pause"):
-                    print('\n"FORTRAN PAUSE" detected. Exiting simulation.', flush=True, end="\n")
-                    successful_simulation = False
-                    process.kill()
-                    break  # process.terminate() # process.communicate('\n') # process.****()
-
-                # Catch Fortran Errors and skip to the next simulation:
-                if out.startswith("forrtl"):  # or out.startswith('forrtl')
-                    print(f'\n Error detected. Exiting simulation. Error: \n {out}', flush=True, end="\n")
-                    successful_simulation = False
-                    process.kill()
-                    break
-
-                # Once finished, move on to the analysis:
-                if out.startswith('ABNORMAL END'):
-                    successful_simulation = False
-                    process.kill()
-                    break
-
-                # Once finished, move on to the analysis:
-                if out.startswith('Normal completion'):
-                    break
-
-        return successful_simulation
 
 
 
