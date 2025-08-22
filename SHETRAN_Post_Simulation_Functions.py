@@ -19,11 +19,55 @@
 # --- Load in Packages ----------------------------------------
 import os
 import shutil
+from datetime import datetime
 import pandas as pd
 import numpy as np
 import hydroeval as he  # https://pypi.org/project/hydroeval/ - open conda prompt: pip install hydroeval
 import plotly.graph_objects as go
 
+
+def SwapDateFormat(DateString, year_first=True, sep_character='/'):
+    """
+    Function to swap date format between "dd-mm-yyyy" and "yyyy-mm-dd" (or with '/' instead of '-')
+
+    param DateString: Date with format "dd-mm-yyyy" or "yyyy-mm-dd"
+    param year_first: Boolean - True if the year is the first part of the date, else False
+    param sep_character: The character to use to separate the date parts in the output string
+
+    Note that the input date can use either '-' or '/' as a separator, but the output will use sep_character.
+    """
+
+    # Normalize input separator
+    normalized_date = DateString.replace('/', '-')
+
+    # Try to infer format from content
+    for fmt in ('%d-%m-%Y', '%Y-%m-%d'):
+        try:
+            date_obj = datetime.strptime(normalized_date, fmt)
+            break
+        except ValueError:
+            continue
+    else:
+        raise ValueError("Date format not recognized. Expected dd-mm-yyyy or yyyy-mm-dd with '-' or '/' separators.")
+
+    # Output format
+    if year_first:
+        output_format = f'%Y{sep_character}%m{sep_character}%d'
+    else:
+        output_format = f'%d{sep_character}%m{sep_character}%Y'
+
+    return date_obj.strftime(output_format)
+
+
+def to_date(date):
+    """
+    Converts a date string into a datetime object.
+    :param date: A string of a date - can me year first or last. Seperator can be '-' or '-'.
+    :return: datetime object
+    """
+    formatted_date = SwapDateFormat(DateString=date, year_first=True, sep_character='/')
+    date_date = datetime.strptime(formatted_date, "%Y/%m/%d")
+    return date_date
 
 
 # --- Calculate Objective Functions for Flows -----------------
@@ -42,6 +86,8 @@ def obj_functions(recorded_timeseries,
                     ["YYY-MM-DD", "YYY-MM-DD"].
                     Leave blank if you want to use the whole thing.
                     Leave as single item in list if you want to use until the end of the data.
+                    Dates will be formatted and so it should not matter whether the seperators are '-' or '/' or
+                    whether year is first or second (month must be middle).
     :param return_flows: Set to True/False according to whether you want to return a pd DataFrame of the timeseries used in calculations
     :return: NSE and other objective function values as an array.
     """
@@ -52,6 +98,7 @@ def obj_functions(recorded_timeseries,
 
     # Select the period for analysis (if given):
     if period is not None:
+        period = [to_date(p) for p in period]
         if len(period) == 1:
             merged_df = merged_df[merged_df.index >= period[0]]
         if len(period) == 2:
@@ -255,7 +302,7 @@ def get_library_date(filepath, start=True, sepchar='/'):
 
 
 # --- Load SHETRAN Regular Discharge File --------------------
-def load_shetran_discharge(flow_path: str, simulation_start_date=None, discharge_column: int=0):
+def load_shetran_discharge(flow_path: str, simulation_start_date=None, discharge_column: int = 0):
     """
     This will take the simulation dates from the library file and the output timestep from the regular discharge file
     and load in the SHETRAN discharge at the outlet (or specified points).
@@ -295,9 +342,13 @@ def load_shetran_discharge(flow_path: str, simulation_start_date=None, discharge
     timestep = timestep[0][0].replace(' ', '')
     timestep = timestep.split('timestep')[-1][:-5]
 
+    # This could be less than daily, so convert it to minutes as freq must have
+    # integers not floats (24.00h or 8.5h won't work but 24h or 1440min will):
+    timestep_min = str(float(timestep) * 60)
+
     # Build the flow dataframe
     flow.index = pd.date_range(start=pd.to_datetime(simulation_start_date, dayfirst=True),
-                               periods=len(flow), freq=f'{timestep}h')
+                               periods=len(flow), freq=f'{timestep_min}min')  # f'{timestep}h')
     flow.index.name = "Date"
     flow.columns = ["Flow"]
     return flow
@@ -311,17 +362,18 @@ def load_discharge(flow_path: str):
     :return:
     """
     # Check how many columns are in the file: (the formatted files that we use have two columns but the CAMELS dataset have 11, of which Dicharge_Vol is the 6th column)
-    column_check = pd.read_csv(flow_path, sep='\t|,', parse_dates=[0], dayfirst=True, engine='python', skiprows=1, nrows=1)
-    
+    column_check = pd.read_csv(flow_path, sep='\t|,', parse_dates=[0], dayfirst=True, engine='python', skiprows=1,
+                               nrows=1)
+
     # If there are 11 columns then assume it is CAMELS:
     if column_check.shape[1] == 11:
         flow = pd.read_csv(flow_path, sep='\t|,', parse_dates=[0], dayfirst=True, engine='python', usecols=[0, 5])
         if 'discharge_vol' not in flow.columns:
             raise ValueError(
                 "The dataset was expected to be a CAMELS dataset with 11 columns. " \
-                    "The CAMELS column 'discharge_vol' was not found and so the datasource is uncertain. " \
-                    "Check the data source matches what you expect (ideally 2 columns: Date and Flow).")
-    
+                "The CAMELS column 'discharge_vol' was not found and so the datasource is uncertain. " \
+                "Check the data source matches what you expect (ideally 2 columns: Date and Flow).")
+
     # If not then assume it is a standard two-column file:
     else:
         flow = pd.read_csv(flow_path, sep='\t|,', parse_dates=[0], dayfirst=True, engine='python', skiprows=1)
@@ -375,7 +427,7 @@ def plot_flow_datasets(flow_path_list: dict, sim_start_date=None, Figure_input=N
     """
     # Set up figure either as fresh, or from the inputted figure:
     fig = go.Figure() if Figure_input is None else Figure_input
-        
+
     # Run through each dictionary item.
     for sim_name, sim_data in flow_path_list.items():
         # Load the flow.
@@ -387,7 +439,7 @@ def plot_flow_datasets(flow_path_list: dict, sim_start_date=None, Figure_input=N
     fig.layout['yaxis'] = dict(title=dict(text='Flow (cumecs)'))
     fig.update_layout(title_text="Catchment Discharge")
     # Show the plot:
-    
+
     # fig.show()  # This has been changed as this does not work in Dash Apps, which need the plotly object, not just the shown figure. You will need to add '.show()' to code that is using the shown output not the updated plotly object. 
     return fig
 
@@ -418,7 +470,7 @@ def load_recorded_groundwater_level(level_path):
     The default should be assumed to be a depth from the surface, as this is what SHETRAN returns, but this
     will load either depth or level without consideration of type.
     """
-    levels = pd.read_csv(level_path, parse_dates=[0], dayfirst=True, skiprows=1, header=None, usecols=[0,1])
+    levels = pd.read_csv(level_path, parse_dates=[0], dayfirst=True, skiprows=1, header=None, usecols=[0, 1])
     levels.columns = ['Date', 'Level']
     levels.set_index('Date', inplace=True)
     return levels
@@ -477,7 +529,6 @@ def plot_groundwater_level_datasets(level_path_list: dict, sim_start_date=None, 
 
     # Run through each dictionary item.
     for sim_name, sim_data in level_path_list.items():
-
         # Load the flow.
         level = load_groundwater_level_files(sim_data, st=sim_start_date, datum_adjustment=datum_adjustment)
 
@@ -494,8 +545,3 @@ def plot_groundwater_level_datasets(level_path_list: dict, sim_start_date=None, 
     fig.add_hline(y=0)
 
     return fig
-
-
-
-
-
