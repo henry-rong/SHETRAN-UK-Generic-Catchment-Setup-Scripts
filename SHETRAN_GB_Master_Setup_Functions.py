@@ -21,7 +21,7 @@
 
 # --- Load in Packages ----------------------------------------
 import os
-import time
+# import time
 # import itertools
 import xarray as xr
 import pandas as pd
@@ -145,8 +145,8 @@ def get_veg_string(vegetation_array_for_library, static_input_dataset):
     # strickler_dict
 
     # Extract the vegetation properties from the metadata
-    veg_props = static_input_dataset.land_cover_lccs.attrs["land_cover_key"].loc[
-        static_input_dataset.land_cover_lccs.attrs["land_cover_key"]["Veg Type #"].isin(veg_vals)].copy()
+    veg_props = static_input_dataset.land_cover.attrs["land_cover_key"].loc[
+        static_input_dataset.land_cover.attrs["land_cover_key"]["Veg Type #"].isin(veg_vals)].copy()
     # veg_props["strickler"] = [strickler_dict[item] for item in veg_props["Veg Type #"]]
 
     # Write the subset of properties out to a string
@@ -169,32 +169,35 @@ def get_soil_strings(orig_soil_types, new_soil_types, static_input_dataset):
     new_soil_types = [int(v) for v in new_soil_types]
 
     # Find the attributes of those columns
-    soil_props = static_input_dataset.soil_type_APM.attrs["soil_key"].loc[
-        static_input_dataset.soil_type_APM.attrs["soil_key"]["Soil Category"].isin(
+    soil_props = static_input_dataset.subsurface.attrs["soil_key"].loc[
+        static_input_dataset.subsurface.attrs["soil_key"]["Soil Category"].isin(
             orig_soil_types)].copy()  # Change soil_type_APM to soil_type to use old soils!
 
     for orig_type, new_type in zip(orig_soil_types, new_soil_types):
         soil_props.loc[soil_props['Soil Category'] == orig_type, 'tmp0'] = new_type
     soil_props['Soil Category'] = soil_props['tmp0'].values
 
-    # Rename the soil types for the new format of shetran
+    # Remove spaces from soil properties else SHETRAN_prepare will break:
     soil_props["New_Soil_Type"] = soil_props["Soil Type"].copy()
-    aquifer_types = ["NoGroundwater", "LowProductivityAquifer", "ModeratelyProductiveAquifer",
-                     "HighlyProductiveAquifer"]
+    soil_props["New_Soil_Type"] = [s.replace(' ', '_') for s in soil_props["New_Soil_Type"]]
 
-    soil_props['tmp1'] = np.where(
-        (~soil_props['Soil Type'].isin(aquifer_types)),
-        'Top_' + soil_props['Soil Type'],
-        soil_props['Soil Type']
-    )
-    soil_props['tmp2'] = np.where(
-        (~soil_props['Soil Type'].isin(aquifer_types)),
-        'Sub_' + soil_props['Soil Type'],
-        soil_props['Soil Type']
-    )
-    soil_props['New_Soil_Type'] = np.where(
-        soil_props['Soil Layer'] == 1, soil_props['tmp1'], soil_props['tmp2']
-    )
+    # Rename the soil types with 'top' and 'sub' for different layers for the new format of SHETRAN:
+    # aquifer_types = ["NoGroundwater", "LowProductivityAquifer", "ModeratelyProductiveAquifer",
+    #                  "HighlyProductiveAquifer"]
+    #
+    # soil_props['tmp1'] = np.where(
+    #     (~soil_props['Soil Type'].isin(aquifer_types)),
+    #     'Top_' + soil_props['Soil Type'],
+    #     soil_props['Soil Type']
+    # )
+    # soil_props['tmp2'] = np.where(
+    #     (~soil_props['Soil Type'].isin(aquifer_types)),
+    #     'Sub_' + soil_props['Soil Type'],
+    #     soil_props['Soil Type']
+    # )
+    # soil_props['New_Soil_Type'] = np.where(
+    #     soil_props['Soil Layer'] == 1, soil_props['tmp1'], soil_props['tmp2']
+    # )
 
     # Assign a new soil code to the unique soil types
     soil_codes = soil_props.New_Soil_Type.unique()
@@ -296,7 +299,7 @@ def create_library_file(
         'catchment steepness. 1m/1km is a sensible starting point but more gently sloping catchments it can be reduced.',
         '<RegularTimestep>1.0</RegularTimestep> This is the standard Shetran timestep it is automatically reduced in '
         'rain. The standard value is 1 hour. The maximum allowed value is 2 hours.',
-        '<IncreasingTimestep>0.05</IncreasingTimestep> speed of increase in timestep after rainfall back to the '
+        '<IncreasingTimestep>0.05</IncreasingTimestep> Speed of increase in timestep after rainfall back to the '
         'standard timestep. The standard value is 0.05. If if there are numerical problems with error 1060 it can be '
         'reduced to 0.01 but the simulation will take longer.',
         '<SimulatedDischargeTimestep>24.0</SimulatedDischargeTimestep> This should be the same as the measured '
@@ -334,11 +337,11 @@ def create_static_maps(static_input_dataset, xll, yll, ncols, nrows, cellsize,
     # #- keys are names used for output and values are lists of variable name in
     # master static dataset alongside output number format
     static_field_details = {
-        'DEM': ['surface_altitude', '%.2f'],
-        'MinDEM': ['surface_altitude_min', '%.2f'],
+        'DEM': ['elevation', '%.2f'],
+        'MinDEM': ['elevation_min', '%.2f'],
         'Lake': ['lake_presence', '%d'],
-        'LandCover': ['land_cover_lccs', '%d'],
-        'Soil': ['soil_type_APM', '%d'],
+        'LandCover': ['land_cover', '%d'],
+        'Soil': ['subsurface', '%d'],
     }
 
     xur = xll + (ncols * cellsize) - 1
@@ -604,13 +607,16 @@ def run_build_climate_data_with_xarray(mask_filepath, climate_output_folder, cat
     start_year, _, _ = get_date_components(climate_startime)
     end_year, _, _ = get_date_components(climate_endtime)
 
+    # start_year = str(start_year)
+    # end_year = str(end_year)
+
     # --- Rainfall
     print("-------- Processing rainfall data.")
     if 'haduk' in prcp_folder.lower():
         # If using HADUK data, we need to find the filenames based on the start and end dates.
         prcp_input_file_names = get_rainfall_filenames(climate_startime, climate_endtime, dataset_type="HADUK")
     elif 'gear' in prcp_folder.lower():
-        prcp_input_file_names = get_rainfall_filenames(start_year, end_year, dataset_type="GEAR")
+        prcp_input_file_names = get_rainfall_filenames(climate_startime, climate_endtime, dataset_type="GEAR")
     else:
         print("Warning: Unrecognised rainfall data folder. Ensure HADUK or GEAR is written in folderpath.")
     prcp_input_files = [os.path.join(prcp_folder, file) for file in prcp_input_file_names]
@@ -748,89 +754,150 @@ def process_mp(mp_catchments, mp_mask_folders, mp_output_folders, mp_simulation_
     pool.join()
 
 
-def read_static_asc_csv(static_input_folder,
-                        UDM_2017=False,
-                        UDM_SSP2_2050=False, UDM_SSP2_2080=False,
-                        UDM_SSP4_2050=False, UDM_SSP4_2080=False,
-                        NFM_max=False, NFM_bal=False):
+# def read_static_asc_csv(static_input_folder,
+#                         UDM_2017=False,
+#                         UDM_SSP2_2050=False, UDM_SSP2_2080=False,
+#                         UDM_SSP4_2050=False, UDM_SSP4_2080=False,
+#                         NFM_max=False, NFM_bal=False):
+#     """
+#     This functions will load in the raw data for the UK, i.e. asc and csv files, and convert these to the dictionary
+#     object used in the setups. There should be 7 files with the following names, all in the same folder (argument):
+#         - SHETRAN_UK_DEM.asc
+#         - SHETRAN_UK_minDEM.asc
+#         - SHETRAN_UK_lake_presence.asc
+#         - SHETRAN_UK_LandCover.asc
+#         - Vegetation_Details.csc
+#         - SHETRAN_UK_SoilGrid_APM.asc
+#         - SHETRAN_UK_SoilDetails.csc
+#
+#         - UDM_GB_LandCover_2017.asc
+#         - UDM_GB_LandCover_2050.asc
+#         - UDM_GB_LandCover_2080.asc
+#
+#         - NFMmax_GB_Woodland.asc
+#         - NFMmax_GB_Storage.asc
+#         - NFMbalanced_GB_Woodland.asc
+#         - NFMmax_GB_Storage.asc
+#
+#     All .asc files should have the same extents and cell sizes.
+#
+#     :param static_input_folder:
+#     :param UDM_2017: True or False depending on whether you want to use the default CEH 2007 or the UDM baseline map.
+#     :param UDM_2050: True or False depending on whether you want to use the default CEH 2007 or the UDM 2050 map.
+#     :param UDM_2080: True or False depending on whether you want to use the default CEH 2007 or the UDM 2080 map.
+#     :param NFM_bal:
+#     :param NFM_max:
+#     :return:
+#     """
+#
+#     # Raise an error if there are multiple land covers selected:
+#     if (UDM_2017 + UDM_SSP2_2050 + UDM_SSP2_2080 + UDM_SSP4_2050 + UDM_SSP4_2080) > 1:
+#         raise ValueError("Multiple UDM land cover maps are 'True' in setup script; only a single map can be used.")
+#
+#     # Raise an error if there are multiple NFM maps selected:
+#     if (NFM_max + NFM_bal) > 1:
+#         raise ValueError("Multiple NFM maps are 'True' in setup script; only a single map can be used.")
+#
+#     # Load in the coordinate data (assumes all data has same coordinates:
+#     _, ncols, nrows, xll, yll, cellsize, _, _, _ = read_ascii_raster(static_input_folder + "SHETRAN_UK_DEM.asc",
+#                                                                      return_metadata=True)
+#
+#     # Create eastings and northings. Note, the northings are reversed to match the maps
+#     eastings = np.arange(xll, ncols * cellsize + yll, cellsize)
+#     northings = np.arange(yll, nrows * cellsize + yll, cellsize)[::-1]
+#     eastings_array, northings_array = np.meshgrid(eastings, northings)
+#
+#     # Set the desired land cover:
+#     if UDM_2017:
+#         LandCoverMap = "UDM_GB_LandCover_2017.asc"
+#     elif UDM_SSP2_2050:
+#         LandCoverMap = "UDM_GB_LandCover_SSP2_2050.asc"
+#     elif UDM_SSP2_2080:
+#         LandCoverMap = "UDM_GB_LandCover_SSP2_2080.asc"
+#     elif UDM_SSP4_2050:
+#         LandCoverMap = "UDM_GB_LandCover_SSP4_2050.asc"
+#     elif UDM_SSP4_2080:
+#         LandCoverMap = "UDM_GB_LandCover_SSP4_2080.asc"
+#     else:
+#         LandCoverMap = "SHETRAN_UK_LandCover.asc"
+#
+#     # Create xarray database to load/store the static input data:
+#     ds = xr.Dataset({
+#         "surface_altitude": (["y", "x"],
+#                              np.loadtxt(static_input_folder + "SHETRAN_UK_DEM.asc", skiprows=6),
+#                              {"units": "m"}),
+#         "surface_altitude_min": (["y", "x", ],
+#                                  np.loadtxt(static_input_folder + "SHETRAN_UK_minDEM.asc", skiprows=6),
+#                                  {"units": "m"}),
+#         "lake_presence": (["y", "x"],
+#                           np.loadtxt(static_input_folder + "SHETRAN_UK_lake_presence.asc", skiprows=6)),
+#         "land_cover_lccs": (["y", "x"],
+#                             np.loadtxt(static_input_folder + LandCoverMap, skiprows=6),
+#                             {"land_cover_key": pd.read_csv(static_input_folder + "Vegetation_Details.csv")}),
+#         "soil_type_APM": (["y", "x"],
+#                           np.loadtxt(static_input_folder + "SHETRAN_UK_SoilGrid_APM.asc", skiprows=6),
+#                           {"soil_key": pd.read_csv(static_input_folder + "SHETRAN_UK_SoilDetails.csv")})
+#     },
+#         coords={"easting": (["y", "x"], eastings_array, {"projection": "BNG"}),
+#                 "northing": (["y", "x"], northings_array, {"projection": "BNG"}),
+#                 "x": (["x"], eastings, {"projection": "BNG"}),
+#                 "y": (["y"], northings, {"projection": "BNG"})})
+#
+#     # Load in the GB NFM Max map from Sayers and Partners:
+#     if NFM_max:
+#         ds["NFM_max_storage"] = (["y", "x"],
+#                                  np.loadtxt(static_input_folder + "NFMmax_GB_Storage.asc", skiprows=6))
+#         ds["NFM_max_woodland"] = (["y", "x"],
+#                                   np.loadtxt(static_input_folder + "NFMmax_GB_Woodland.asc", skiprows=6))
+#     if NFM_bal:
+#         ds["NFM_balanced_storage"] = (["y", "x"],
+#                                       np.loadtxt(static_input_folder + "NFMbalanced_GB_Storage.asc", skiprows=6))
+#         ds["NFM_balanced_woodland"] = (["y", "x"],
+#                                        np.loadtxt(static_input_folder + "NFMbalanced_GB_Woodland.asc", skiprows=6))
+#
+#     return ds
+
+
+
+def read_static_asc_csv(DEM_path, DEMminimum_path,
+                        Lake_map_path,
+                        Land_cover_map_path, Land_cover_table_path,
+                        Subsurface_map_path, Subsurface_table_path,
+                        NFM_max=False, NFM_bal=False,
+                        NFM_storage_path=None, NFM_forest_path=None):
     """
-    This functions will load in the raw data for the UK, i.e. asc and csv files, and convert these to the dictionary
-    object used in the setups. There should be 7 files with the following names, all in the same folder (argument):
-        - SHETRAN_UK_DEM.asc
-        - SHETRAN_UK_minDEM.asc
-        - SHETRAN_UK_lake_presence.asc
-        - SHETRAN_UK_LandCover.asc
-        - Vegetation_Details.csc
-        - SHETRAN_UK_SoilGrid_APM.asc
-        - SHETRAN_UK_SoilDetails.csc
-
-        - UDM_GB_LandCover_2017.asc
-        - UDM_GB_LandCover_2050.asc
-        - UDM_GB_LandCover_2080.asc
-
-        - NFMmax_GB_Woodland.asc
-        - NFMmax_GB_Storage.asc
-        - NFMbalanced_GB_Woodland.asc
-        - NFMmax_GB_Storage.asc
-
-    All .asc files should have the same extents and cell sizes.
-
-    :param static_input_folder:
-    :param UDM_2017: True or False depending on whether you want to use the default CEH 2007 or the UDM baseline map.
-    :param UDM_2050: True or False depending on whether you want to use the default CEH 2007 or the UDM 2050 map.
-    :param UDM_2080: True or False depending on whether you want to use the default CEH 2007 or the UDM 2080 map.
-    :param NFM_bal:
-    :param NFM_max:
-    :return:
+    This should work in the same way as the original function, but uses direct paths instead of hardcoded file names. All rasters should be .asc files with 6 line headers.
+    :param DEM_path_asc: raster map of the elevation (.asc format)
     """
-
-    # Raise an error if there are multiple land covers selected:
-    if (UDM_2017 + UDM_SSP2_2050 + UDM_SSP2_2080 + UDM_SSP4_2050 + UDM_SSP4_2080) > 1:
-        raise ValueError("Multiple UDM land cover maps are 'True' in setup script; only a single map can be used.")
 
     # Raise an error if there are multiple NFM maps selected:
     if (NFM_max + NFM_bal) > 1:
         raise ValueError("Multiple NFM maps are 'True' in setup script; only a single map can be used.")
 
     # Load in the coordinate data (assumes all data has same coordinates:
-    _, ncols, nrows, xll, yll, cellsize, _, _, _ = read_ascii_raster(static_input_folder + "SHETRAN_UK_DEM.asc",
-                                                                     return_metadata=True)
+    _, ncols, nrows, xll, yll, cellsize, _, _, _ = read_ascii_raster(DEM_path, return_metadata=True)
 
     # Create eastings and northings. Note, the northings are reversed to match the maps
     eastings = np.arange(xll, ncols * cellsize + yll, cellsize)
     northings = np.arange(yll, nrows * cellsize + yll, cellsize)[::-1]
     eastings_array, northings_array = np.meshgrid(eastings, northings)
 
-    # Set the desired land cover:
-    if UDM_2017:
-        LandCoverMap = "UDM_GB_LandCover_2017.asc"
-    elif UDM_SSP2_2050:
-        LandCoverMap = "UDM_GB_LandCover_SSP2_2050.asc"
-    elif UDM_SSP2_2080:
-        LandCoverMap = "UDM_GB_LandCover_SSP2_2080.asc"
-    elif UDM_SSP4_2050:
-        LandCoverMap = "UDM_GB_LandCover_SSP4_2050.asc"
-    elif UDM_SSP4_2080:
-        LandCoverMap = "UDM_GB_LandCover_SSP4_2080.asc"
-    else:
-        LandCoverMap = "SHETRAN_UK_LandCover.asc"
-
     # Create xarray database to load/store the static input data:
     ds = xr.Dataset({
-        "surface_altitude": (["y", "x"],
-                             np.loadtxt(static_input_folder + "SHETRAN_UK_DEM.asc", skiprows=6),
-                             {"units": "m"}),
-        "surface_altitude_min": (["y", "x", ],
-                                 np.loadtxt(static_input_folder + "SHETRAN_UK_minDEM.asc", skiprows=6),
-                                 {"units": "m"}),
+        "elevation": (["y", "x"],
+                      np.loadtxt(DEM_path, skiprows=6),
+                      {"units": "m"}),
+        "elevation_min": (["y", "x", ],
+                          np.loadtxt(DEMminimum_path, skiprows=6),
+                          {"units": "m"}),
         "lake_presence": (["y", "x"],
-                          np.loadtxt(static_input_folder + "SHETRAN_UK_lake_presence.asc", skiprows=6)),
-        "land_cover_lccs": (["y", "x"],
-                            np.loadtxt(static_input_folder + LandCoverMap, skiprows=6),
-                            {"land_cover_key": pd.read_csv(static_input_folder + "Vegetation_Details.csv")}),
-        "soil_type_APM": (["y", "x"],
-                          np.loadtxt(static_input_folder + "SHETRAN_UK_SoilGrid_APM.asc", skiprows=6),
-                          {"soil_key": pd.read_csv(static_input_folder + "SHETRAN_UK_SoilDetails.csv")})
+                          np.loadtxt(Lake_map_path, skiprows=6)),
+        "land_cover": (["y", "x"],
+                       np.loadtxt(Land_cover_map_path, skiprows=6),
+                       {"land_cover_key": pd.read_csv(Land_cover_table_path)}),
+        "subsurface": (["y", "x"],
+                       np.loadtxt(Subsurface_map_path, skiprows=6),
+                       {"soil_key": pd.read_csv(Subsurface_table_path)})
     },
         coords={"easting": (["y", "x"], eastings_array, {"projection": "BNG"}),
                 "northing": (["y", "x"], northings_array, {"projection": "BNG"}),
@@ -840,14 +907,14 @@ def read_static_asc_csv(static_input_folder,
     # Load in the GB NFM Max map from Sayers and Partners:
     if NFM_max:
         ds["NFM_max_storage"] = (["y", "x"],
-                                 np.loadtxt(static_input_folder + "NFMmax_GB_Storage.asc", skiprows=6))
+                                 np.loadtxt(NFM_storage_path, skiprows=6))
         ds["NFM_max_woodland"] = (["y", "x"],
-                                  np.loadtxt(static_input_folder + "NFMmax_GB_Woodland.asc", skiprows=6))
+                                  np.loadtxt(NFM_forest_path, skiprows=6))
     if NFM_bal:
         ds["NFM_balanced_storage"] = (["y", "x"],
-                                      np.loadtxt(static_input_folder + "NFMbalanced_GB_Storage.asc", skiprows=6))
+                                      np.loadtxt(NFM_storage_path, skiprows=6))
         ds["NFM_balanced_woodland"] = (["y", "x"],
-                                       np.loadtxt(static_input_folder + "NFMbalanced_GB_Woodland.asc", skiprows=6))
+                                       np.loadtxt(NFM_forest_path, skiprows=6))
 
     return ds
 
@@ -930,7 +997,12 @@ def create_catchment_mask_from_shapefile(shapefile_path, output_ascii_path, reso
 
 # --- Get Date Components from a data string ------------------
 def get_date_components(date_string, fmt='%Y-%m-%d'):
-    # "1980/01/01"
+    """
+    Consider whether you should be returning these as strings (I think they are currently integers).
+    :param date_string: e.g. "1980/01/01"
+    :param fmt:
+    :return:
+    """
     date = datetime.datetime.strptime(date_string, fmt)
     return date.year, date.month, date.day
 
@@ -1289,3 +1361,4 @@ def Run_SHETRAN_Simulations_in_Parallel(catchment_list, simulation_source_folder
     q.put('kill')
     pool.close()
     pool.join()
+

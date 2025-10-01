@@ -61,7 +61,7 @@ SHETRAN Prepare.exe script from setting up. Remove these manually (and check any
 corresponding cell maps). Later version of SHETRAN Prepare may correct for this issue.
 
 An efficient way of creating masks from a shapefile is to open them in QGIS, then use:
-1. Raster > Raster to Vector.
+1. Raster > Rasterize (Vector to Raster).
     Set raster size units to geo-referenced units. width/height to desired resolution. CRS to BNG.
     Extents as per constraints above. Burn in value = 0 and No data value = -9999.
 2. Raster > Convert Format. Set parameters as above and write as .asc file
@@ -77,6 +77,14 @@ If the mask resolution does not match the static data resolution you will get an
     >> boolean index did not match indexed array along dimension 0;
     >> dimension is 12 but corresponding boolean dimension is 6
 This is probably because one of the two have incorrect file paths.
+
+
+--- Climate Data:
+The script has been set up to run using both HadUK and CHESS/GEAR meteorological datasets. Set the folder path
+below - the script will work out the format of the data and process it accordingly.
+On our servers these can be found here:
+- 'I:/HADUK/HADUK_precip_daily/'
+- 'I:/CEH-GEAR_rainfall_daily/'
 
 
 --- Northern Ireland:
@@ -116,9 +124,9 @@ TODO:
  - Consider changing Vegetation_Details.csv to LandCover_details.csv
  - Update YML file on github.
  - Use cProfile to explore bottlenecks in the code.
- - Higher resolution grids may need a higher (or lower) strickler coefficient as there is more topographic variation.
+ - Higher resolution grids may need a higher (or lower) Strickler coefficient as there is more topographic variation.
  - The Temp and PET data loads whole years, rather than just the months needed. Change this to speed it up.
- - Recent PET data (>=2016) has latlong (or doesn't) and this differes from earlier data.
+ - Recent PET data (>=2016) has lat/long (or doesn't) and this differs from earlier data.
     Fix code so that it can load 01/12/2015 to 01/02/2016.
 
 -------------------------------------------------------------
@@ -129,6 +137,7 @@ import SHETRAN_GB_Master_Setup_Functions as SF
 import pandas as pd
 import numpy as np
 import time
+import os
 
 # -------------------------------------------------------------
 # --- USER INPUTS ---------------------------------------------
@@ -137,8 +146,8 @@ import time
 # --- Set File Paths -------------------------------------------
 
 # Climate input folders:
-create_climate_data = True  # [True/False]
-rainfall_input_folder = 'I:/HADUK/HADUK_precip_daily/' #  'I:/CEH-GEAR_rainfall_daily/'
+create_climate_data = False  # [True/False]
+rainfall_input_folder = 'I:/CEH-GEAR/CEH-GEAR_rainfall_daily/'  # 'I:/HADUK/HADUK_precip_daily/' #
 temperature_input_folder = 'I:/CHESS/CHESS_temperature_daily/'
 PET_input_folder = 'I:/CHESS/CHESS_PET_daily/'
 
@@ -154,11 +163,11 @@ raw_input_folder = "I:/SHETRAN_GB_2021/02_Input_Data/00 - Raw ASCII inputs for S
 
 # --- Set Processing Methods -----------------------------------
 process_single_catchment = dict(
-    single=False,
-    simulation_name='4006',
-    mask_path= "I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/4006_Mask.txt",
+    single=True,
+    simulation_name='Heigham',
+    mask_path="C:/BenSmith/Wensum at Heigham - 1000m.asc",  # "I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/4006_Mask.txt",
+    output_folder="S:/11 - Anglian Water Catchments (HEIF Grant 2025)/New setup with superficials/Heigham/")  # end with '/'
     # output_folder="I:/SHETRAN_GB_2021/04_Historical_Simulations/SHETRAN_UK_APM_Historical_HADUK/4006/")  # end with '/'
-    output_folder="I:/SHETRAN_GB_2021/04_Historical_Simulations/SHETRAN_UK_APM_Historical_HADUK/4006 TEST WITH RECENT DATA/")  # end with '/'
     # output_folder="S:/02 - Python Optimiser/02_Simulations/PhD Simulations/43018/"
 
 # Choose Single / Multiprocessing:
@@ -168,7 +177,7 @@ multiprocessing = dict(
     mask_folder_prefix='I:/SHETRAN_GB_2021/02_Input_Data/1kmBngMasks_Processed/',  # 1kmBngMasks_Processed/', # I:\SHETRAN_GB_2021\02_Input_Data\superseded\1kmBngMasks
     output_folder_prefix="I:/SHETRAN_GB_2021/04_Historical_Simulations/SHETRAN_UK_APM_Historical_HADUK/",  # 'I:/SHETRAN_GB_2021/02_Input_Data/NFM Catchment Maps/NFM_Maximum/',
     use_multiprocessing=True,  # May only work on Blades?
-    n_processes=30,  # For use on the blades
+    n_processes=2,  # For use on the blades
     use_groups=True,  # [True, False][1]
     group="1")  # String. Not used when use_groups == False.
 
@@ -198,14 +207,26 @@ if __name__ == "__main__":
         pass
 
     # --- Import the Static Dataset -------------------------------
-    static_data = SF.read_static_asc_csv(static_input_folder=raw_input_folder,
-                                         UDM_2017=Use_UrbanDevelopmentModel_2017,
-                                         UDM_SSP2_2050=Use_UrbanDevelopmentModel_SSP2_2050,
-                                         UDM_SSP2_2080=Use_UrbanDevelopmentModel_SSP2_2080,
-                                         UDM_SSP4_2050=Use_UrbanDevelopmentModel_SSP4_2050,
-                                         UDM_SSP4_2080=Use_UrbanDevelopmentModel_SSP4_2080,
-                                         NFM_max=Use_NFM_Max_Woodland_Storage_Addition,
-                                         NFM_bal=Use_NFM_Bal_Woodland_Storage_Addition)
+    # static_data = SF.read_static_asc_csv(
+    #     static_input_folder=raw_input_folder,
+    #     UDM_2017=Use_UrbanDevelopmentModel_2017,
+    #     UDM_SSP2_2050=Use_UrbanDevelopmentModel_SSP2_2050,
+    #     UDM_SSP2_2080=Use_UrbanDevelopmentModel_SSP2_2080,
+    #     UDM_SSP4_2050=Use_UrbanDevelopmentModel_SSP4_2050,
+    #     UDM_SSP4_2080=Use_UrbanDevelopmentModel_SSP4_2080,
+    #     NFM_max=Use_NFM_Max_Woodland_Storage_Addition,
+    #     NFM_bal=Use_NFM_Bal_Woodland_Storage_Addition)
+
+    static_data = SF.read_static_asc_csv(
+        DEM_path=os.path.join(raw_input_folder, 'SHETRAN_UK_DEM.asc'),
+        DEMminimum_path=os.path.join(raw_input_folder, 'SHETRAN_UK_minDEM.asc'),
+        Lake_map_path=os.path.join(raw_input_folder, 'SHETRAN_UK_lake_presence.asc'),
+        Land_cover_map_path=os.path.join(raw_input_folder, 'SHETRAN_UK_LandCover.asc'),
+        Land_cover_table_path=os.path.join(raw_input_folder, 'Vegetation_Details.csv'),
+        Subsurface_map_path=os.path.join(raw_input_folder, 'SHETRAN_UK_Subsurface_ESD_BGSsuper_HydroGeo.asc'),
+        Subsurface_table_path=os.path.join(raw_input_folder, 'SHETRAN_UK_Subsurface_ESD_BGSsuper_HydroGeo.csv'),
+        NFM_max=False, NFM_bal=False,
+        NFM_storage_path=None, NFM_forest_path=None)
 
     # --- Import the Climate Datasets -----------------------------
     # if create_climate_data:
